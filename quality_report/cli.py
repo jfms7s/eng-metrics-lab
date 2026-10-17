@@ -81,8 +81,10 @@ def _cmd_store(args: argparse.Namespace) -> int:
         with store.connect(url) as conn:
             inserted = store.insert_report(conn, report)
     except psycopg.Error as exc:
-        # Never print the URL: it carries the password.
-        print(f"error: database: {exc}", file=sys.stderr)
+        # libpq echoes fragments of a malformed connection string (password included),
+        # so never print its message: only the exception class and SQLSTATE.
+        detail = type(exc).__name__ + (f" (sqlstate {exc.sqlstate})" if exc.sqlstate else "")
+        print(f"error: database error: {detail}", file=sys.stderr)
         return 1
     print("stored" if inserted else "already stored")
     return 0

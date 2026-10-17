@@ -6,9 +6,40 @@ import pytest
 
 from collector.migrate import migrate
 from quality_report import cli
+from quality_report.deadcode import KINDS
 from quality_report.store import insert_report, report_row
 
 SAMPLE = Path(__file__).parent / "fixtures" / "sample-report.json"
+
+
+def test_sample_fixture_matches_real_report_shape():
+    from datetime import UTC, datetime
+
+    from quality_report.ci import RunContext
+    from quality_report.complexity import (
+        FunctionStat,
+        summarize_complexity,
+        summarize_size,
+    )
+    from quality_report.report import build_report
+
+    sample = json.loads(SAMPLE.read_text())
+    fns = [FunctionStat(name="f", file="a.py", ccn=11, nloc=3)]
+    ctx = RunContext(repo="r", commit="c", branch="b", ci_system="github", run="1")
+    real = build_report(
+        ctx, ["python"], {"lizard": "1"}, summarize_size(fns),
+        {"percent": 1.0, "duplicated_lines": 1, "clones": 1, "min_tokens": 50},
+        {"total": 0, "by_kind": dict.fromkeys(KINDS, 0)},
+        summarize_complexity(fns, 10), {"result": "pass", "baseline_commit": None, "violations": []},
+    )
+    assert set(sample) == set(real)
+    for section in ("ci", "size", "duplication", "dead_code", "complexity", "ratchet"):
+        assert set(sample[section]) == set(real[section]), section
+    assert set(sample["dead_code"]["by_kind"]) == set(KINDS)
+    assert sample["dead_code"]["total"] == sum(sample["dead_code"]["by_kind"].values())
+    assert set(real["ci"]) == {"system", "run"}
+    assert isinstance(sample["tools"], dict) and datetime.fromisoformat(
+        sample["generated_at"].replace("Z", "+00:00")).tzinfo is UTC
 
 
 def test_report_row_maps_columns():
@@ -49,6 +80,17 @@ def test_store_db_error_hides_url(monkeypatch, capsys):
     monkeypatch.setenv("QUALITY_DB_URL", "postgresql://u:secret@127.0.0.1:1/x?connect_timeout=2")
     assert cli.main(["store", str(SAMPLE)]) == 1
     assert "secret" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("url, secret", [
+    ("u:secret@host/db", "secret"),
+    ("postgresql://u:pa%zzsecret@host/db", "pa%zzsecret"),
+])
+def test_store_malformed_url_hides_secret(monkeypatch, capsys, url, secret):
+    monkeypatch.setenv("QUALITY_DB_URL", url)
+    assert cli.main(["store", str(SAMPLE)]) == 1
+    out = capsys.readouterr()
+    assert secret not in out.out and secret not in out.err
 
 
 @pytest.mark.db
