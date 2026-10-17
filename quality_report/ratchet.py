@@ -21,11 +21,13 @@ def _dead_code_current(report: dict) -> int | None:
 
 
 def _complexity_current(report: dict, baseline: dict) -> int | None:
-    """Count at the *baseline's* threshold, not the report's own."""
+    """Count at the *baseline's* threshold: the report's own count if thresholds match, else `over`."""
     complexity = report.get("complexity")
     threshold = baseline.get("complexity_threshold")
     if complexity is None or threshold is None:
         return None
+    if complexity.get("threshold") == threshold:
+        return complexity.get("functions_over_threshold")
     over = complexity.get("over") or {}
     key = str(threshold)
     if key not in over:

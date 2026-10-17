@@ -35,6 +35,17 @@ def test_ratchet_compares_at_baseline_threshold():
     assert check(R(thr=7, over10=57, over7=500), B)["result"] == "pass"
 
 
+def test_ratchet_compares_own_count_when_thresholds_match_outside_over_table():
+    """Threshold 12 is not in the fixed `over` table; the report's own count is what counts."""
+    base = {**B, "complexity_threshold": 12, "functions_over_threshold": 5}
+    report = {**R(thr=12, over10=50), "complexity": {"threshold": 12, "functions_over_threshold": 50,
+                                                      "over": {"7": 100, "10": 60, "15": 1}}}
+    res = check(report, base)
+    assert res["result"] == "fail"
+    assert res["violations"] == [{"field": "complexity.functions_over_threshold",
+                                  "baseline": 5, "current": 50, "tolerance": 0}]
+
+
 def test_violation_lists_field_values():
     v = check(R(dead=45), B)["violations"]
     assert v == [{"field": "dead_code.total", "baseline": 42, "current": 45, "tolerance": 0}]
