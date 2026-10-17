@@ -1,0 +1,97 @@
+{
+  "statistics": {
+    "detectionDate": "2026-10-17T15:59:52.337Z",
+    "formats": {
+      "typescript": {
+        "sources": {
+          "/tmp/tmp.jOECfp7ia9/src/b.ts": {
+            "lines": 39,
+            "tokens": 2438,
+            "sources": 1,
+            "clones": 1,
+            "duplicatedLines": 39,
+            "duplicatedTokens": 2438,
+            "percentage": 100,
+            "percentageTokens": 100,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "/tmp/tmp.jOECfp7ia9/src/a.ts": {
+            "lines": 39,
+            "tokens": 2438,
+            "sources": 1,
+            "clones": 1,
+            "duplicatedLines": 39,
+            "duplicatedTokens": 2438,
+            "percentage": 100,
+            "percentageTokens": 100,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          }
+        },
+        "total": {
+          "lines": 78,
+          "tokens": 4876,
+          "sources": 2,
+          "clones": 1,
+          "duplicatedLines": 39,
+          "duplicatedTokens": 2438,
+          "percentage": 50,
+          "percentageTokens": 50,
+          "newDuplicatedLines": 0,
+          "newClones": 0
+        }
+      }
+    },
+    "total": {
+      "lines": 78,
+      "tokens": 4876,
+      "sources": 2,
+      "clones": 1,
+      "duplicatedLines": 39,
+      "duplicatedTokens": 2438,
+      "percentage": 50,
+      "percentageTokens": 50,
+      "newDuplicatedLines": 0,
+      "newClones": 0
+    }
+  },
+  "duplicates": [
+    {
+      "format": "typescript",
+      "lines": 40,
+      "fragment": "function f0(a,b){ const x = a + b * 0; if (x > 3) { return x - a; } return x + b; }\nfunction f1(a,b){ const x = a + b * 1; if (x > 3) { return x - a; } return x + b; }\nfunction f2(a,b){ const x = a + b * 2; if (x > 3) { return x - a; } return x + b; }\nfunction f3(a,b){ const x = a + b * 3; if (x > 3) { return x - a; } return x + b; }\nfunction f4(a,b){ const x = a + b * 4; if (x > 3) { return x - a; } return x + b; }\nfunction f5(a,b){ const x = a + b * 5; if (x > 3) { return x - a; } return x + b; }\nfunction f6(a,b){ const x = a + b * 6; if (x > 3) { return x - a; } return x + b; }\nfunction f7(a,b){ const x = a + b * 7; if (x > 3) { return x - a; } return x + b; }\nfunction f8(a,b){ const x = a + b * 8; if (x > 3) { return x - a; } return x + b; }\nfunction f9(a,b){ const x = a + b * 9; if (x > 3) { return x - a; } return x + b; }\nfunction f10(a,b){ const x = a + b * 10; if (x > 3) { return x - a; } return x + b; }\nfunction f11(a,b){ const x = a + b * 11; if (x > 3) { return x - a; } return x + b; }\nfunction f12(a,b){ const x = a + b * 12; if (x > 3) { return x - a; } return x + b; }\nfunction f13(a,b){ const x = a + b * 13; if (x > 3) { return x - a; } return x + b; }\nfunction f14(a,b){ const x = a + b * 14; if (x > 3) { return x - a; } return x + b; }\nfunction f15(a,b){ const x = a + b * 15; if (x > 3) { return x - a; } return x + b; }\nfunction f16(a,b){ const x = a + b * 16; if (x > 3) { return x - a; } return x + b; }\nfunction f17(a,b){ const x = a + b * 17; if (x > 3) { return x - a; } return x + b; }\nfunction f18(a,b){ const x = a + b * 18; if (x > 3) { return x - a; } return x + b; }\nfunction f19(a,b){ const x = a + b * 19; if (x > 3) { return x - a; } return x + b; }\nfunction f20(a,b){ const x = a + b * 20; if (x > 3) { return x - a; } return x + b; }\nfunction f21(a,b){ const x = a + b * 21; if (x > 3) { return x - a; } return x + b; }\nfunction f22(a,b){ const x = a + b * 22; if (x > 3) { return x - a; } return x + b; }\nfunction f23(a,b){ const x = a + b * 23; if (x > 3) { return x - a; } return x + b; }\nfunction f24(a,b){ const x = a + b * 24; if (x > 3) { return x - a; } return x + b; }\nfunction f25(a,b){ const x = a + b * 25; if (x > 3) { return x - a; } return x + b; }\nfunction f26(a,b){ const x = a + b * 26; if (x > 3) { return x - a; } return x + b; }\nfunction f27(a,b){ const x = a + b * 27; if (x > 3) { return x - a; } return x + b; }\nfunction f28(a,b){ const x = a + b * 28; if (x > 3) { return x - a; } return x + b; }\nfunction f29(a,b){ const x = a + b * 29; if (x > 3) { return x - a; } return x + b; }\nfunction f30(a,b){ const x = a + b * 30; if (x > 3) { return x - a; } return x + b; }\nfunction f31(a,b){ const x = a + b * 31; if (x > 3) { return x - a; } return x + b; }\nfunction f32(a,b){ const x = a + b * 32; if (x > 3) { return x - a; } return x + b; }\nfunction f33(a,b){ const x = a + b * 33; if (x > 3) { return x - a; } return x + b; }\nfunction f34(a,b){ const x = a + b * 34; if (x > 3) { return x - a; } return x + b; }\nfunction f35(a,b){ const x = a + b * 35; if (x > 3) { return x - a; } return x + b; }\nfunction f36(a,b){ const x = a + b * 36; if (x > 3) { return x - a; } return x + b; }\nfunction f37(a,b){ const x = a + b * 37; if (x > 3) { return x - a; } return x + b; }\nfunction f38(a,b){ const x = a + b * 38; if (x > 3) { return x - a; } return x + b; }\nfunction f39(a,b){ const x = a + b * 39; if (x > 3) { return x - a; } return x + b; }",
+      "tokens": 0,
+      "firstFile": {
+        "name": "src/a.ts",
+        "start": 1,
+        "end": 40,
+        "startLoc": {
+          "line": 1,
+          "column": 1,
+          "position": 0
+        },
+        "endLoc": {
+          "line": 40,
+          "column": 86,
+          "position": 2438
+        }
+      },
+      "secondFile": {
+        "name": "src/b.ts",
+        "start": 1,
+        "end": 40,
+        "startLoc": {
+          "line": 1,
+          "column": 1,
+          "position": 0
+        },
+        "endLoc": {
+          "line": 40,
+          "column": 86,
+          "position": 2438
+        }
+      }
+    }
+  ]
+}

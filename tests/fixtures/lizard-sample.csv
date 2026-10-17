@@ -1,0 +1,5 @@
+NLOC,CCN,token,PARAM,length,location,file,function,long_name,start,end
+4,2,14,2,4,"f@1-4@./m.py","./m.py","f","f( a , b )",1,4
+5,5,54,2,5,"parse@1-5@./a.ts","./a.ts","parse","parse ( a , b )",1,5
+1,1,13,2,1,"add@6-6@./a.ts","./a.ts","add","add ( x , y )",6,6
+12,9,88,3,12,"handle@20-31@./src/svc.ts","./src/svc.ts","handle","handle ( req , res , next )",20,31

@@ -1,0 +1,42 @@
+name: quality-report
+description: Measure duplication, dead code and cyclomatic complexity, upload the report and enforce the ratchet.
+inputs:
+  image:
+    description: quality-report container image to run
+    default: ghcr.io/jfms7s/quality-report:v0
+  artifact-name:
+    description: Name of the uploaded report artifact
+    default: quality-report
+runs:
+  using: composite
+  steps:
+    - name: Log in to ghcr.io
+      shell: bash
+      run: docker login ghcr.io -u "${{ github.actor }}" --password-stdin <<< "${{ github.token }}"
+    - name: Run quality-report
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: >-
+        docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp
+        -v "${{ github.workspace }}:/work" -w /work
+        -e GITHUB_ACTIONS -e GITHUB_REPOSITORY -e GITHUB_REF_NAME -e GITHUB_HEAD_REF -e GITHUB_RUN_ID
+        -e QUALITY_COMMIT="${{ github.event.pull_request.head.sha || github.sha }}"
+        "$IMAGE" quality-report run --out .quality/report.json
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: .quality/report.json
+        # .quality/ is a hidden directory; upload-artifact >= 4.4 skips hidden files by default
+        include-hidden-files: true
+        retention-days: 30
+    - name: Check the ratchet
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: >-
+        docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp
+        -v "${{ github.workspace }}:/work" -w /work
+        "$IMAGE" quality-report ratchet
+        --baseline .quality-baseline.json --report .quality/report.json

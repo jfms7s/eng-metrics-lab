@@ -1,0 +1,68 @@
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+  packages: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e '.[dev]'
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -m "not tools and not db"
+  db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      QUALITY_TEST_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e '.[dev]'
+      - run: pytest -m db
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t quality-report:ci .
+      - name: tools tests inside the image
+        run: >-
+          docker run --rm -v "$PWD:/src" -w /src quality-report:ci
+          sh -c "pip install -q pytest responses && pytest -m tools"
+  self:
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t quality-report:ci .
+      - uses: ./action
+        with:
+          image: quality-report:ci
+      - name: report names this repo and detects python only
+        run: |
+          python3 - <<'PY'
+          import json
+          report = json.load(open(".quality/report.json"))
+          assert report["repo"] == "eng-metrics-lab", report["repo"]
+          assert report["languages"] == ["python"], report["languages"]
+          PY

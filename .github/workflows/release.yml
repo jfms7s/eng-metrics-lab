@@ -1,0 +1,40 @@
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  packages: write
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/jfms7s/quality-report
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match the package version
+        run: |
+          python3 - <<'PY'
+          import os, re, tomllib
+          tag = os.environ["GITHUB_REF_NAME"]
+          match = re.fullmatch(r"v(\d+\.\d+\.\d+)", tag)
+          version = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          if not match or match[1] != version:
+              raise SystemExit(f"tag {tag} does not match pyproject.toml version {version}")
+          PY
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          docker build -t "$IMAGE:$version" -t "$IMAGE:v0" .
+          docker push "$IMAGE:$version"
+          if [[ "$GITHUB_REF_NAME" =~ ^v0\.[0-9]+\.[0-9]+$ ]]; then
+            docker push "$IMAGE:v0"
+          fi
+      - name: Move the v0 tag to this release
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ ^v0\.[0-9]+\.[0-9]+$ ]]; then
+            git tag -f v0
+            git push -f origin v0
+          fi
