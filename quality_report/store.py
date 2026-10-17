@@ -4,6 +4,7 @@ from __future__ import annotations
 import psycopg
 from psycopg.types.json import Jsonb
 
+CONNECT_TIMEOUT = 10
 _JSON_COLUMNS = ("dead_by_kind", "cc_over_by", "ratchet_violations", "raw")
 
 _COLUMNS = (
@@ -55,7 +56,7 @@ def report_row(report: dict) -> dict[str, object]:
 
 
 def connect(url: str) -> psycopg.Connection:
-    return psycopg.connect(url)
+    return psycopg.connect(url, connect_timeout=CONNECT_TIMEOUT)
 
 
 def insert_report(conn: psycopg.Connection, report: dict) -> bool:

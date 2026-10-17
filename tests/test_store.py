@@ -7,7 +7,7 @@ import pytest
 from collector.migrate import migrate
 from quality_report import cli
 from quality_report.deadcode import KINDS
-from quality_report.store import insert_report, report_row
+from quality_report.store import connect, insert_report, report_row
 
 SAMPLE = Path(__file__).parent / "fixtures" / "sample-report.json"
 
@@ -130,3 +130,10 @@ def test_stored_row_round_trips(admin_url, passwords, writer_conn, sample):
             "select cc_over_by, dup_percent, raw->>'schema' from quality_reports "
             "where branch = 'feature/x'").fetchone()
     assert row[0] == {"7": 112, "10": 57, "15": 19} and float(row[1]) == 3.4 and row[2] == "1"
+
+
+def test_connect_sets_a_connect_timeout(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(psycopg, "connect", lambda url, **kw: seen.update(url=url, **kw))
+    connect("postgresql://u@h/db")
+    assert seen == {"url": "postgresql://u@h/db", "connect_timeout": 10}
