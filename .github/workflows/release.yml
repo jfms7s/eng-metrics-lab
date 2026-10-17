@@ -1,0 +1,26 @@
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  packages: write
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/jfms7s/quality-report
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          docker build -t "$IMAGE:$version" -t "$IMAGE:v0" .
+          docker push "$IMAGE:$version"
+          docker push "$IMAGE:v0"
+      - name: Move the v0 tag to this release
+        run: |
+          git tag -f v0
+          git push -f origin v0

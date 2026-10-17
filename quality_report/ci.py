@@ -11,7 +11,7 @@ _VERSION_TIMEOUT = 10
 _TOOL_VERSION_COMMANDS: dict[str, list[str]] = {
     "jscpd": ["jscpd", "--version"],
     "lizard": ["lizard", "--version"],
-    "cargo-machete": ["cargo", "machete", "--version"],
+    "cargo-machete": ["cargo-machete", "--version"],
 }
 
 

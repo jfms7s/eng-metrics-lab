@@ -91,10 +91,10 @@ def run_cargo_machete(repo: Path) -> int | None:
     """Unused-crate count from cargo-machete; None (with a warning) if the run is broken.
 
     Exit code 1 just means "unused crates found" and is not a failure. Anything
-    above 1, a run that never printed machete's "Analyzing dependencies" banner (e.g. the subcommand is
+    above 1, a run that never printed machete's "Analyzing dependencies" banner (e.g. the binary is
     not installed), or per-manifest errors on stderr mean the count is unreliable.
     """
-    result = run_tool(["cargo", "machete", str(repo)])
+    result = run_tool(["cargo-machete", str(repo)])
     if result is None:
         return None
     combined = result.stdout + result.stderr

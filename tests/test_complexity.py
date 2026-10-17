@@ -63,6 +63,7 @@ def test_run_lizard_missing_warns_and_returns_none(monkeypatch, tmp_path, capsys
     assert capsys.readouterr().err.startswith("quality-report: warning:")
 
 
+@pytest.mark.tools
 @pytest.mark.skipif(shutil.which("lizard") is None, reason="lizard not installed")
 def test_run_lizard_honours_excludes(tmp_path):
     # distinct bodies: lizard silently drops duplicate files

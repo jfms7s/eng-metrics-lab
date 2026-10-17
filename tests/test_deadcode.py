@@ -34,7 +34,7 @@ Done!
 
 
 def _have_machete() -> bool:
-    r = run_tool(["cargo", "machete", "--version"])
+    r = run_tool(["cargo-machete", "--version"])
     return r is not None and r.returncode == 0
 
 
@@ -150,7 +150,7 @@ def test_parse_knip_null_fields_count_zero(tmp_path):
 
 def _stub_machete(monkeypatch, rc, stdout="", stderr=""):
     import subprocess
-    result = subprocess.CompletedProcess(["cargo"], rc, stdout, stderr)
+    result = subprocess.CompletedProcess(["cargo-machete"], rc, stdout, stderr)
     monkeypatch.setattr("quality_report.deadcode.run_tool", lambda *a, **k: result)
 
 
@@ -173,6 +173,6 @@ def test_machete_manifest_error_is_none_with_warning(monkeypatch, capsys):
 
 
 def test_machete_not_installed_is_none_with_warning(monkeypatch, capsys):
-    _stub_machete(monkeypatch, 101, "", "error: no such subcommand: `machete`")
+    _stub_machete(monkeypatch, 101, "", "cargo-machete: command not found")
     assert run_cargo_machete(Path(".")) is None
     assert "warning" in capsys.readouterr().err
