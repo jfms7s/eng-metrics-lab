@@ -25,10 +25,14 @@ def test_sample_fixture_matches_real_report_shape():
     fns = [FunctionStat(name="f", file="a.py", ccn=11, nloc=3)]
     ctx = RunContext(repo="r", commit="c", branch="b", ci_system="github", run="1")
     real = build_report(
-        ctx, ["python"], {"lizard": "1"}, summarize_size(fns),
+        ctx,
+        ["python"],
+        {"lizard": "1"},
+        summarize_size(fns),
         {"percent": 1.0, "duplicated_lines": 1, "clones": 1, "min_tokens": 50},
         {"total": 0, "by_kind": dict.fromkeys(KINDS, 0)},
-        summarize_complexity(fns, 10), {"result": "pass", "baseline_commit": None, "violations": []},
+        summarize_complexity(fns, 10),
+        {"result": "pass", "baseline_commit": None, "violations": []},
     )
     assert set(sample) == set(real)
     for section in ("ci", "size", "duplication", "dead_code", "complexity", "ratchet"):
@@ -44,7 +48,11 @@ def test_report_row_maps_columns():
     assert row["dup_percent"] == 3.4 and row["cc_over"] == 57
     assert row["cc_over_by"] == {"7": 112, "10": 57, "15": 19}
     assert row["ratchet_result"] == "pass" and row["raw"]["schema"] == 1
-    assert row["ci_system"] == "github" and row["nloc"] == 18400 and row["functions"] == 950
+    assert (
+        row["ci_system"] == "github"
+        and row["nloc"] == 18400
+        and row["functions"] == 950
+    )
     assert row["dead_total"] == 23 and row["cc_max"] == 48
 
 
@@ -56,7 +64,11 @@ def test_report_row_null_metrics():
 
 def test_report_row_all_sections_null():
     r = json.loads(SAMPLE.read_text()) | {
-        "duplication": None, "complexity": None, "size": None, "ratchet": None}
+        "duplication": None,
+        "complexity": None,
+        "size": None,
+        "ratchet": None,
+    }
     row = report_row(r)
     assert row["dup_percent"] is None and row["cc_over_by"] is None
     assert row["nloc"] is None and row["ratchet_result"] is None
@@ -74,15 +86,20 @@ def test_store_unreadable_report(monkeypatch, tmp_path, capsys):
 
 
 def test_store_db_error_hides_url(monkeypatch, capsys):
-    monkeypatch.setenv("QUALITY_DB_URL", "postgresql://u:secret@127.0.0.1:1/x?connect_timeout=2")
+    monkeypatch.setenv(
+        "QUALITY_DB_URL", "postgresql://u:secret@127.0.0.1:1/x?connect_timeout=2"
+    )
     assert cli.main(["store", str(SAMPLE)]) == 1
     assert "secret" not in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("url, secret", [
-    ("u:secret@host/db", "secret"),
-    ("postgresql://u:pa%zzsecret@host/db", "pa%zzsecret"),
-])
+@pytest.mark.parametrize(
+    "url, secret",
+    [
+        ("u:secret@host/db", "secret"),
+        ("postgresql://u:pa%zzsecret@host/db", "pa%zzsecret"),
+    ],
+)
 def test_store_malformed_url_hides_secret(monkeypatch, capsys, url, secret):
     monkeypatch.setenv("QUALITY_DB_URL", url)
     assert cli.main(["store", str(SAMPLE)]) == 1
@@ -117,7 +134,8 @@ def test_grafana_can_only_select(grafana_conn):
     grafana_conn.execute("select count(*) from quality_reports")
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         grafana_conn.execute(
-            "insert into hotspots values ('r', current_date, 'f', 1, null, 1, 1, 1, 1)")
+            "insert into hotspots values ('r', current_date, 'f', 1, null, 1, 1, 1, 1)"
+        )
     grafana_conn.rollback()
 
 
@@ -128,12 +146,19 @@ def test_stored_row_round_trips(admin_url, passwords, writer_conn, sample):
     with psycopg.connect(admin_url) as conn:
         row = conn.execute(
             "select cc_over_by, dup_percent, raw->>'schema' from quality_reports "
-            "where branch = 'feature/x'").fetchone()
-    assert row[0] == {"7": 112, "10": 57, "15": 19} and float(row[1]) == 3.4 and row[2] == "1"
+            "where branch = 'feature/x'"
+        ).fetchone()
+    assert (
+        row[0] == {"7": 112, "10": 57, "15": 19}
+        and float(row[1]) == 3.4
+        and row[2] == "1"
+    )
 
 
 def test_connect_sets_a_connect_timeout(monkeypatch):
     seen = {}
-    monkeypatch.setattr(psycopg, "connect", lambda url, **kw: seen.update(url=url, **kw))
+    monkeypatch.setattr(
+        psycopg, "connect", lambda url, **kw: seen.update(url=url, **kw)
+    )
     connect("postgresql://u@h/db")
     assert seen == {"url": "postgresql://u@h/db", "connect_timeout": 10}

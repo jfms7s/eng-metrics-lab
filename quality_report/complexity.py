@@ -46,7 +46,9 @@ def run_lizard(repo: Path, exclude: list[str]) -> str | None:
     if result is None:
         return None
     if result.returncode != 0:
-        detail = result.stderr.strip().splitlines()[-1:] or [f"exit code {result.returncode}"]
+        detail = result.stderr.strip().splitlines()[-1:] or [
+            f"exit code {result.returncode}"
+        ]
         warn(f"lizard failed ({detail[0]}); complexity skipped")
         return None
     return result.stdout
@@ -71,7 +73,9 @@ def parse_lizard_csv(text: str, repo: Path | None = None) -> list[FunctionStat]:
             ccn, nloc = int(row[_CCN]), int(row[_NLOC])
         except ValueError:
             continue  # header row
-        stats.append(FunctionStat(_relative(row[_FILE], repo), row[_LONG_NAME], ccn, nloc))
+        stats.append(
+            FunctionStat(_relative(row[_FILE], repo), row[_LONG_NAME], ccn, nloc)
+        )
     return stats
 
 

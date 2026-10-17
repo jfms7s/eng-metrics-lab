@@ -12,7 +12,11 @@ from collector.migrate import migrate
 
 FIXTURES = Path(__file__).parent / "fixtures"
 _PASSWORDS = {"writer": "w-test-pw", "collector": "c-test-pw", "grafana": "g-test-pw"}
-_ROLES = {"writer": "quality_writer", "collector": "quality_collector", "grafana": "quality_grafana"}
+_ROLES = {
+    "writer": "quality_writer",
+    "collector": "quality_collector",
+    "grafana": "quality_grafana",
+}
 
 
 @pytest.fixture(scope="session")
@@ -43,14 +47,20 @@ def admin_url(_server_url, passwords):
     migrate(url, passwords)
     yield url
     with psycopg.connect(_server_url, autocommit=True) as conn:
-        conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+        conn.execute(
+            sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
+        )
 
 
 def _role_conn(admin_url: str, role: str, password: str):
     info = conninfo_to_dict(admin_url)
     url = make_conninfo(
-        "", host=info.get("host"), port=info.get("port"), dbname=info["dbname"],
-        user=role, password=password,
+        "",
+        host=info.get("host"),
+        port=info.get("port"),
+        dbname=info["dbname"],
+        user=role,
+        password=password,
     )
     return psycopg.connect(url)
 

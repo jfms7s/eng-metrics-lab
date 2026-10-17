@@ -1,4 +1,5 @@
 """Fetch quality-report artifacts from the GitHub Actions API."""
+
 from __future__ import annotations
 
 import io
@@ -47,22 +48,29 @@ class Artifact:
         """
         if self.repository_id is None and self.head_repository_id is None:
             return True
-        return self.repository_id is not None and self.repository_id == self.head_repository_id
+        return (
+            self.repository_id is not None
+            and self.repository_id == self.head_repository_id
+        )
 
 
 def new_session(token: str) -> requests.Session:
     session = requests.Session()
-    session.headers.update({
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    })
+    session.headers.update(
+        {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+    )
     return session
 
 
 def _parse_time(value: str) -> datetime:
     parsed = datetime.fromisoformat(value)
-    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+    return (
+        parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+    )
 
 
 def _to_artifact(raw: dict) -> Artifact:
@@ -79,7 +87,10 @@ def _to_artifact(raw: dict) -> Artifact:
 
 
 def list_report_artifacts(
-    session: requests.Session, owner: str, repo: str, since: datetime,
+    session: requests.Session,
+    owner: str,
+    repo: str,
+    since: datetime,
     name: str = "quality-report",
 ) -> list[Artifact]:
     """Unexpired artifacts called `name` created at or after `since`, newest first."""
@@ -89,14 +100,22 @@ def list_report_artifacts(
     while True:
         try:
             resp = session.get(
-                url, params={"name": name, "per_page": PER_PAGE, "page": page}, timeout=TIMEOUT
+                url,
+                params={"name": name, "per_page": PER_PAGE, "page": page},
+                timeout=TIMEOUT,
             )
         except requests.RequestException as exc:
-            raise CollectorError(f"{owner}/{repo}: listing failed ({type(exc).__name__})") from None
+            raise CollectorError(
+                f"{owner}/{repo}: listing failed ({type(exc).__name__})"
+            ) from None
         if resp.status_code in _AUTH_STATUSES:
-            raise CollectorError(f"{owner}/{repo}: GitHub returned HTTP {resp.status_code}")
+            raise CollectorError(
+                f"{owner}/{repo}: GitHub returned HTTP {resp.status_code}"
+            )
         if not resp.ok:
-            raise CollectorError(f"{owner}/{repo}: listing failed with HTTP {resp.status_code}")
+            raise CollectorError(
+                f"{owner}/{repo}: listing failed with HTTP {resp.status_code}"
+            )
         batch = [_to_artifact(raw) for raw in resp.json().get("artifacts", [])]
         found.extend(a for a in batch if not a.expired and a.created_at >= since)
         # Newest first: once a whole page predates `since`, later pages can only be older.

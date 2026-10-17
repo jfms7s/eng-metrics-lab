@@ -71,7 +71,9 @@ def run_jscpd(
     if result is None:
         return None
     if result.returncode != 0:
-        detail = result.stderr.strip().splitlines()[-1:] or [f"exit code {result.returncode}"]
+        detail = result.stderr.strip().splitlines()[-1:] or [
+            f"exit code {result.returncode}"
+        ]
         warn(f"jscpd failed ({detail[0]}); duplication skipped")
         return None
     report = out_dir / REPORT_NAME

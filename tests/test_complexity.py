@@ -46,7 +46,13 @@ def test_parse_makes_absolute_paths_repo_relative():
 
 
 def test_size_counts_distinct_files():
-    s = summarize_size([FunctionStat("a.ts", "f", 1, 3), FunctionStat("a.ts", "g", 1, 4), FunctionStat("b.ts", "h", 1, 5)])
+    s = summarize_size(
+        [
+            FunctionStat("a.ts", "f", 1, 3),
+            FunctionStat("a.ts", "g", 1, 4),
+            FunctionStat("b.ts", "h", 1, 5),
+        ]
+    )
     assert s == {"files": 2, "nloc": 12, "functions": 3}
 
 
@@ -54,7 +60,14 @@ def test_exclude_args_cover_top_level_and_nested():
     args = lizard_exclude_args(["node_modules", "**/migrations/**", "*.d.ts"])
     patterns = args[1::2]
     assert args[0::2] == ["-x"] * len(patterns)
-    assert {"./node_modules/*", "*/node_modules/*", "./migrations/*", "*/migrations/*", "./*.d.ts", "*/*.d.ts"} <= set(patterns)
+    assert {
+        "./node_modules/*",
+        "*/node_modules/*",
+        "./migrations/*",
+        "*/migrations/*",
+        "./*.d.ts",
+        "*/*.d.ts",
+    } <= set(patterns)
 
 
 def test_run_lizard_missing_warns_and_returns_none(monkeypatch, tmp_path, capsys):
@@ -67,7 +80,15 @@ def test_run_lizard_missing_warns_and_returns_none(monkeypatch, tmp_path, capsys
 @pytest.mark.skipif(shutil.which("lizard") is None, reason="lizard not installed")
 def test_run_lizard_honours_excludes(tmp_path):
     # distinct bodies: lizard silently drops duplicate files
-    for i, rel in enumerate(["src/a.ts", "node_modules/x/b.ts", "sub/node_modules/c.ts", "vendor/v.ts", "types.d.ts"]):
+    for i, rel in enumerate(
+        [
+            "src/a.ts",
+            "node_modules/x/b.ts",
+            "sub/node_modules/c.ts",
+            "vendor/v.ts",
+            "types.d.ts",
+        ]
+    ):
         path = tmp_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"function f{i}(x) {{ if (x) {{ return {i} }} return 2 }}\n")

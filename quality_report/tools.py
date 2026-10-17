@@ -18,7 +18,9 @@ def run_tool(
     """
     name = args[0]
     try:
-        return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False)
+        return subprocess.run(
+            args, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False
+        )
     except FileNotFoundError:
         warn(f"{name} not found; skipped")
     except subprocess.TimeoutExpired:

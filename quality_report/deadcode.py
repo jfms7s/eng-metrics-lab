@@ -8,18 +8,30 @@ from pathlib import Path
 from quality_report.detect import is_excluded
 from quality_report.tools import run_tool, warn
 
-KINDS = ("unused_files", "unused_exports", "unused_dependencies", "unused_symbols", "suppressed")
+KINDS = (
+    "unused_files",
+    "unused_exports",
+    "unused_dependencies",
+    "unused_symbols",
+    "suppressed",
+)
 
 # Shape of `knip --reporter json` (5.x): a top-level `files` list plus an `issues`
 # list with one record per file. List-valued fields hold findings directly;
 # `enumMembers` / `classMembers` map each enum/class name to its unused members.
 _KNIP_LIST_FIELDS = {
-    "unused_dependencies": ("dependencies", "devDependencies", "optionalPeerDependencies"),
+    "unused_dependencies": (
+        "dependencies",
+        "devDependencies",
+        "optionalPeerDependencies",
+    ),
     "unused_exports": ("exports", "types"),
 }
 _KNIP_MEMBER_FIELDS = ("enumMembers", "classMembers")
 
-_DEAD_CODE_ALLOW = re.compile(r"#!?\[\s*(?:allow|expect)\s*\([^\]]*\bdead_code\b[^\]]*\)\s*\]")
+_DEAD_CODE_ALLOW = re.compile(
+    r"#!?\[\s*(?:allow|expect)\s*\([^\]]*\bdead_code\b[^\]]*\)\s*\]"
+)
 _MACHETE_CRATE = re.compile(r"^\t\S+$")
 
 
@@ -59,12 +71,16 @@ def _len_of(value: object) -> int:
 
 
 def _count_knip(data: dict) -> dict[str, int]:
-    counts = dict.fromkeys(("unused_files", "unused_exports", "unused_dependencies", "unused_symbols"), 0)
+    counts = dict.fromkeys(
+        ("unused_files", "unused_exports", "unused_dependencies", "unused_symbols"), 0
+    )
     counts["unused_files"] = _len_of(data.get("files"))
     for record in data.get("issues") or []:
         for kind, fields in _KNIP_LIST_FIELDS.items():
             counts[kind] += sum(_len_of(record.get(f)) for f in fields)
-        counts["unused_symbols"] += sum(_len_of(record.get(f)) for f in _KNIP_MEMBER_FIELDS)
+        counts["unused_symbols"] += sum(
+            _len_of(record.get(f)) for f in _KNIP_MEMBER_FIELDS
+        )
     return counts
 
 
@@ -104,7 +120,9 @@ def run_cargo_machete(repo: Path) -> int | None:
     combined = result.stdout + result.stderr
     detail = (result.stderr.strip().splitlines() or ["no error output"])[0]
     if result.returncode > 1 or "Analyzing dependencies" not in combined:
-        warn(f"cargo-machete failed or is not installed (exit {result.returncode}: {detail}); skipped")
+        warn(
+            f"cargo-machete failed or is not installed (exit {result.returncode}: {detail}); skipped"
+        )
         return None
     if "error when handling" in combined:
         warn("cargo-machete could not process some manifests; skipped")

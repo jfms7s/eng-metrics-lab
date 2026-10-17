@@ -22,14 +22,24 @@ LIST_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/actions/artifacts"
 TOKEN = "ghp_supersecret_token_value"
 
 
-def zip_bytes(report: dict | None = None, name: str = "report.json", raw: bytes | None = None) -> bytes:
+def zip_bytes(
+    report: dict | None = None, name: str = "report.json", raw: bytes | None = None
+) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr(name, raw if raw is not None else json.dumps(report))
     return buf.getvalue()
 
 
-def artifact(id_, age_days=0.0, expired=False, branch="main", sha=None, repo_id=None, head_repo_id=None):
+def artifact(
+    id_,
+    age_days=0.0,
+    expired=False,
+    branch="main",
+    sha=None,
+    repo_id=None,
+    head_repo_id=None,
+):
     run = {"head_branch": branch, "head_sha": sha or f"c{id_}"}
     if repo_id is not None:
         run["repository_id"] = repo_id
@@ -59,6 +69,7 @@ def add_zip(id_, body):
 def report(sample):
     def make(commit, repo=REPO):
         return {**sample, "commit": commit, "repo": repo}
+
     return make
 
 
@@ -81,16 +92,34 @@ def stored(monkeypatch):
 @pytest.fixture
 def gh_mock(report):
     with responses.RequestsMock(assert_all_requests_are_fired=False) as r:
-        r.add(responses.GET, LIST_URL, json={"artifacts": [
-            artifact(3, 0.5), artifact(2, 1, expired=True), artifact(1, 10)]})
+        r.add(
+            responses.GET,
+            LIST_URL,
+            json={
+                "artifacts": [
+                    artifact(3, 0.5),
+                    artifact(2, 1, expired=True),
+                    artifact(1, 10),
+                ]
+            },
+        )
         r.add(responses.GET, f"{LIST_URL}/3/zip", body=zip_bytes(report("c3")))
         yield r
 
 
 @responses.activate
 def test_lists_only_recent_unexpired():
-    responses.add(responses.GET, LIST_URL, json={"artifacts": [
-        artifact(3, 0.5, branch="main", sha="deadbeef"), artifact(2, 1, expired=True), artifact(1, 10)]})
+    responses.add(
+        responses.GET,
+        LIST_URL,
+        json={
+            "artifacts": [
+                artifact(3, 0.5, branch="main", sha="deadbeef"),
+                artifact(2, 1, expired=True),
+                artifact(1, 10),
+            ]
+        },
+    )
     arts = list_report_artifacts(session(), OWNER, REPO, since=since())
     assert [a.id for a in arts] == [3]
     assert (arts[0].head_branch, arts[0].head_sha) == ("main", "deadbeef")
@@ -113,7 +142,11 @@ def test_list_paginates_until_short_page():
 
 @responses.activate
 def test_list_stops_when_page_entirely_older():
-    responses.add(responses.GET, LIST_URL, json={"artifacts": [artifact(i, 20) for i in range(100)]})
+    responses.add(
+        responses.GET,
+        LIST_URL,
+        json={"artifacts": [artifact(i, 20) for i in range(100)]},
+    )
     assert list_report_artifacts(session(), OWNER, REPO, since=since()) == []
     assert len(responses.calls) == 1
 
@@ -122,12 +155,15 @@ def test_download_extracts_report_json(gh_mock):
     assert download_report(session(), OWNER, REPO, 3)["schema"] == 1
 
 
-@pytest.mark.parametrize("body", [
-    b"not a zip",
-    zip_bytes(name="other.json", report={}),
-    zip_bytes(raw=b"{broken"),
-    zip_bytes(raw=b"[1, 2]"),
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"not a zip",
+        zip_bytes(name="other.json", report={}),
+        zip_bytes(raw=b"{broken"),
+        zip_bytes(raw=b"[1, 2]"),
+    ],
+)
 @responses.activate
 def test_download_bad_artifact_raises_value_error(body):
     add_zip(9, body)
@@ -143,12 +179,19 @@ def test_collect_overlapping_window_counts_skipped(gh_mock, stored):
 
 def test_collect_prints_summary_line(gh_mock, stored, capsys):
     collect(None, session(), OWNER, [REPO], since())
-    assert capsys.readouterr().out.strip() == f"{REPO} inserted=1 skipped=0 rejected=0 failed=0"
+    assert (
+        capsys.readouterr().out.strip()
+        == f"{REPO} inserted=1 skipped=0 rejected=0 failed=0"
+    )
 
 
 @responses.activate
 def test_collect_continues_after_bad_zip(stored, report):
-    responses.add(responses.GET, LIST_URL, json={"artifacts": [artifact(5, 0.1), artifact(4, 0.2)]})
+    responses.add(
+        responses.GET,
+        LIST_URL,
+        json={"artifacts": [artifact(5, 0.1), artifact(4, 0.2)]},
+    )
     add_zip(5, b"corrupt")
     add_zip(4, zip_bytes(report("c4")))
     s = collect(None, session(), OWNER, [REPO], since())
@@ -180,7 +223,9 @@ def test_list_server_error_raises_collector_error():
 
 @responses.activate
 def test_list_network_error_raises_collector_error():
-    responses.add(responses.GET, LIST_URL, body=requests.ConnectionError(f"boom {TOKEN}"))
+    responses.add(
+        responses.GET, LIST_URL, body=requests.ConnectionError(f"boom {TOKEN}")
+    )
     with pytest.raises(CollectorError) as info:
         list_report_artifacts(session(), OWNER, REPO, since())
     assert TOKEN not in str(info.value)
@@ -227,7 +272,9 @@ def test_collect_missing_env_exits_2(main_env, monkeypatch, capsys, missing):
 def test_main_collect_success_trims_repos(main_env, report, capsys):
     for repo, sha in ((REPO, "c1"), ("other", "c2")):
         url = f"https://api.github.com/repos/{OWNER}/{repo}/actions/artifacts"
-        responses.add(responses.GET, url, json={"artifacts": [artifact(1, 0.1, sha=sha)]})
+        responses.add(
+            responses.GET, url, json={"artifacts": [artifact(1, 0.1, sha=sha)]}
+        )
         responses.add(responses.GET, f"{url}/1/zip", body=zip_bytes(report(sha, repo)))
     assert main(["collect"]) == 0
     out = capsys.readouterr().out.splitlines()
@@ -238,23 +285,31 @@ def test_main_collect_success_trims_repos(main_env, report, capsys):
 
 
 @responses.activate
-def test_main_collect_exits_1_on_failed_but_processes_other_repos(main_env, report, capsys):
+def test_main_collect_exits_1_on_failed_but_processes_other_repos(
+    main_env, report, capsys
+):
     url = f"https://api.github.com/repos/{OWNER}/{REPO}/actions/artifacts"
     responses.add(responses.GET, url, json={"artifacts": [artifact(1, 0.1)]})
     responses.add(responses.GET, f"{url}/1/zip", body=b"corrupt")
     other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
     responses.add(responses.GET, other, json={"artifacts": [artifact(2, 0.1)]})
-    responses.add(responses.GET, f"{other}/2/zip", body=zip_bytes(report("c2", "other")))
+    responses.add(
+        responses.GET, f"{other}/2/zip", body=zip_bytes(report("c2", "other"))
+    )
     assert main(["collect"]) == 1
     assert "other inserted=1" in capsys.readouterr().out
 
 
 @responses.activate
 def test_main_collect_401_exits_1_and_never_leaks_token(main_env, report, capsys):
-    responses.add(responses.GET, LIST_URL, status=401, json={"message": "Bad credentials"})
+    responses.add(
+        responses.GET, LIST_URL, status=401, json={"message": "Bad credentials"}
+    )
     other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
     responses.add(responses.GET, other, json={"artifacts": [artifact(2, 0.1)]})
-    responses.add(responses.GET, f"{other}/2/zip", body=zip_bytes(report("c2", "other")))
+    responses.add(
+        responses.GET, f"{other}/2/zip", body=zip_bytes(report("c2", "other"))
+    )
     assert main(["collect"]) == 1
     captured = capsys.readouterr()
     assert "401" in captured.err
@@ -265,6 +320,7 @@ def test_main_collect_401_exits_1_and_never_leaks_token(main_env, report, capsys
 
 def test_main_collect_db_error_is_secret_safe(monkeypatch, capsys):
     import psycopg
+
     for k, v in ENV.items():
         monkeypatch.setenv(k, v)
 
@@ -279,7 +335,9 @@ def test_main_collect_db_error_is_secret_safe(monkeypatch, capsys):
 
 MIGRATE_ENV = {
     "QUALITY_ADMIN_URL": "postgresql://admin:adminpw@h/quality",
-    "QUALITY_WRITER_PASSWORD": "w", "QUALITY_COLLECTOR_PASSWORD": "c", "QUALITY_GRAFANA_PASSWORD": "g",
+    "QUALITY_WRITER_PASSWORD": "w",
+    "QUALITY_COLLECTOR_PASSWORD": "c",
+    "QUALITY_GRAFANA_PASSWORD": "g",
 }
 
 
@@ -290,7 +348,12 @@ def test_main_migrate_success(monkeypatch, capsys):
     monkeypatch.setattr(cmain, "migrate", lambda url, pw: calls.append((url, pw)))
     assert main(["migrate"]) == 0
     assert capsys.readouterr().out.strip() == "migrated"
-    assert calls == [(MIGRATE_ENV["QUALITY_ADMIN_URL"], {"writer": "w", "collector": "c", "grafana": "g"})]
+    assert calls == [
+        (
+            MIGRATE_ENV["QUALITY_ADMIN_URL"],
+            {"writer": "w", "collector": "c", "grafana": "g"},
+        )
+    ]
 
 
 def test_main_migrate_missing_env_exits_2(monkeypatch, capsys):
@@ -303,6 +366,7 @@ def test_main_migrate_missing_env_exits_2(monkeypatch, capsys):
 
 def test_main_migrate_db_error_is_secret_safe(monkeypatch, capsys):
     import psycopg
+
     for k, v in MIGRATE_ENV.items():
         monkeypatch.setenv(k, v)
 
@@ -316,8 +380,11 @@ def test_main_migrate_db_error_is_secret_safe(monkeypatch, capsys):
 
 
 @responses.activate
-def test_db_rejected_report_is_failed_rolled_back_and_run_continues(monkeypatch, report, capsys):
+def test_db_rejected_report_is_failed_rolled_back_and_run_continues(
+    monkeypatch, report, capsys
+):
     import psycopg
+
     conn = FakeConn()
     seen = []
 
@@ -332,12 +399,20 @@ def test_db_rejected_report_is_failed_rolled_back_and_run_continues(monkeypatch,
     for k, v in ENV.items():
         monkeypatch.setenv(k, v)
     url = f"https://api.github.com/repos/{OWNER}/{REPO}/actions/artifacts"
-    responses.add(responses.GET, url, json={"artifacts": [artifact(1, 0.1, sha="bad"), artifact(2, 0.2, sha="good")]})
+    responses.add(
+        responses.GET,
+        url,
+        json={"artifacts": [artifact(1, 0.1, sha="bad"), artifact(2, 0.2, sha="good")]},
+    )
     responses.add(responses.GET, f"{url}/1/zip", body=zip_bytes(report("bad")))
     responses.add(responses.GET, f"{url}/2/zip", body=zip_bytes(report("good")))
     other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
-    responses.add(responses.GET, other, json={"artifacts": [artifact(3, 0.1, sha="next")]})
-    responses.add(responses.GET, f"{other}/3/zip", body=zip_bytes(report("next", "other")))
+    responses.add(
+        responses.GET, other, json={"artifacts": [artifact(3, 0.1, sha="next")]}
+    )
+    responses.add(
+        responses.GET, f"{other}/3/zip", body=zip_bytes(report("next", "other"))
+    )
 
     assert main(["collect"]) == 1
     captured = capsys.readouterr()
@@ -350,6 +425,7 @@ def test_db_rejected_report_is_failed_rolled_back_and_run_continues(monkeypatch,
 
 # --- untrusted artifact contents (ruling R19) ---
 
+
 def _one_artifact(art, body):
     responses.add(responses.GET, LIST_URL, json={"artifacts": [art]})
     add_zip(art["id"], body)
@@ -357,18 +433,41 @@ def _one_artifact(art, body):
 
 @responses.activate
 def test_list_captures_repository_ids():
-    responses.add(responses.GET, LIST_URL, json={"artifacts": [
-        artifact(1, 0.1, repo_id=10, head_repo_id=10), artifact(2, 0.1)]})
+    responses.add(
+        responses.GET,
+        LIST_URL,
+        json={
+            "artifacts": [
+                artifact(1, 0.1, repo_id=10, head_repo_id=10),
+                artifact(2, 0.1),
+            ]
+        },
+    )
     a, b = list_report_artifacts(session(), OWNER, REPO, since())
-    assert (a.repository_id, a.head_repository_id, a.from_trusted_repo) == (10, 10, True)
-    assert (b.repository_id, b.head_repository_id, b.from_trusted_repo) == (None, None, True)
+    assert (a.repository_id, a.head_repository_id, a.from_trusted_repo) == (
+        10,
+        10,
+        True,
+    )
+    assert (b.repository_id, b.head_repository_id, b.from_trusted_repo) == (
+        None,
+        None,
+        True,
+    )
 
 
 @pytest.mark.parametrize("repo_id,head_repo_id", [(10, 99), (10, None), (None, 10)])
 @responses.activate
-def test_fork_and_unverifiable_artifacts_are_rejected_without_download(stored, report, capsys, repo_id, head_repo_id):
-    responses.add(responses.GET, LIST_URL, json={"artifacts": [
-        artifact(1, 0.1, repo_id=repo_id, head_repo_id=head_repo_id)]})
+def test_fork_and_unverifiable_artifacts_are_rejected_without_download(
+    stored, report, capsys, repo_id, head_repo_id
+):
+    responses.add(
+        responses.GET,
+        LIST_URL,
+        json={
+            "artifacts": [artifact(1, 0.1, repo_id=repo_id, head_repo_id=head_repo_id)]
+        },
+    )
     s = collect(None, session(), OWNER, [REPO], since())
     assert (s.inserted, s.rejected, s.failed) == (0, 1, 0)
     assert not stored
@@ -380,7 +479,9 @@ def test_fork_and_unverifiable_artifacts_are_rejected_without_download(stored, r
 
 @responses.activate
 def test_same_repo_artifact_is_collected(stored, report):
-    _one_artifact(artifact(1, 0.1, repo_id=10, head_repo_id=10), zip_bytes(report("c1")))
+    _one_artifact(
+        artifact(1, 0.1, repo_id=10, head_repo_id=10), zip_bytes(report("c1"))
+    )
     assert collect(None, session(), OWNER, [REPO], since()).inserted == 1
 
 
@@ -404,7 +505,11 @@ def test_report_commit_differing_from_run_commit_is_rejected(stored, report, cap
 
 @responses.activate
 def test_rejections_do_not_fail_the_run(main_env, report, capsys):
-    responses.add(responses.GET, LIST_URL, json={"artifacts": [artifact(1, 0.1, repo_id=1, head_repo_id=2)]})
+    responses.add(
+        responses.GET,
+        LIST_URL,
+        json={"artifacts": [artifact(1, 0.1, repo_id=1, head_repo_id=2)]},
+    )
     other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
     responses.add(responses.GET, other, json={"artifacts": []})
     assert main(["collect"]) == 0
@@ -422,7 +527,7 @@ def test_streamed_body_over_cap_is_refused_without_content_length(monkeypatch):
     from collector.github import BadReportError, _read_capped
 
     class Stub:
-        headers: dict = {}
+        headers: dict = {}  # noqa: RUF012
 
         @staticmethod
         def iter_content(_size):

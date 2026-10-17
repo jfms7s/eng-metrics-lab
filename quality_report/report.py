@@ -1,4 +1,5 @@
 """Assemble the schema-1 quality report (spec section 6) and drive one run."""
+
 from __future__ import annotations
 
 import json
@@ -18,9 +19,18 @@ from quality_report.complexity import (
     summarize_size,
 )
 from quality_report.config import load_config
-from quality_report.deadcode import has_cargo_manifest, merge_dead_code, parse_knip, scan_rust
+from quality_report.deadcode import (
+    has_cargo_manifest,
+    merge_dead_code,
+    parse_knip,
+    scan_rust,
+)
 from quality_report.detect import detect_languages
-from quality_report.duplication import duplication_formats, parse_jscpd_report, run_jscpd
+from quality_report.duplication import (
+    duplication_formats,
+    parse_jscpd_report,
+    run_jscpd,
+)
 from quality_report.tools import warn
 
 SCHEMA_VERSION = 1
@@ -89,7 +99,9 @@ def _measure_duplication(
 ) -> dict | None:
     formats = duplication_formats(languages, formats_override)
     if not formats:
-        warn("no code languages detected and no duplication_formats set; duplication skipped")
+        warn(
+            "no code languages detected and no duplication_formats set; duplication skipped"
+        )
         return None
     report_path = run_jscpd(repo, exclude, min_tokens, out_dir, formats)
     return None if report_path is None else parse_jscpd_report(report_path, min_tokens)
@@ -170,9 +182,13 @@ def format_summary(report: dict, functions: list[FunctionStat]) -> list[str]:
     )
     lines = [summary]
     if cx is not None:
-        offenders = sorted((f for f in functions if f.ccn > cx["threshold"]),
-                           key=lambda f: (-f.ccn, f.file, f.name))
-        lines += [f"  {f.file}:{f.name} {f.ccn}" for f in offenders[:MAX_OFFENDERS_PRINTED]]
+        offenders = sorted(
+            (f for f in functions if f.ccn > cx["threshold"]),
+            key=lambda f: (-f.ccn, f.file, f.name),
+        )
+        lines += [
+            f"  {f.file}:{f.name} {f.ccn}" for f in offenders[:MAX_OFFENDERS_PRINTED]
+        ]
     return lines
 
 

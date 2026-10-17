@@ -42,8 +42,8 @@ def _have_machete() -> bool:
 def test_parse_knip_maps_kinds():
     k = parse_knip(Path("tests/fixtures/knip-sample.json"))
     assert k["unused_files"] == 1 and k["unused_dependencies"] == 1
-    assert k["unused_exports"] == 2          # exports + types
-    assert k["unused_symbols"] == 1          # enum/class members
+    assert k["unused_exports"] == 2  # exports + types
+    assert k["unused_symbols"] == 1  # enum/class members
 
 
 def test_parse_knip_empty_file_is_none(tmp_path, capsys):
@@ -65,24 +65,35 @@ def test_parse_knip_missing_file_is_none_without_warning(tmp_path, capsys):
 
 def test_count_dead_code_allows(tmp_path):
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "a.rs").write_text("#[allow(dead_code)]\nfn a(){}\n#[expect(dead_code)]\nfn b(){}\n#[allow(unused, dead_code)]\nfn c(){}\n")
-    (tmp_path / "target").mkdir(); (tmp_path / "target" / "x.rs").write_text("#[allow(dead_code)]\n")
+    (tmp_path / "src" / "a.rs").write_text(
+        "#[allow(dead_code)]\nfn a(){}\n#[expect(dead_code)]\nfn b(){}\n#[allow(unused, dead_code)]\nfn c(){}\n"
+    )
+    (tmp_path / "target").mkdir()
+    (tmp_path / "target" / "x.rs").write_text("#[allow(dead_code)]\n")
     assert count_dead_code_allows(tmp_path, list(DEFAULT_EXCLUDES)) == 3
 
 
 def test_count_dead_code_allows_ignores_other_lints(tmp_path):
-    (tmp_path / "a.rs").write_text("#[allow(unused_variables)]\n#![allow(clippy::all)]\n")
+    (tmp_path / "a.rs").write_text(
+        "#[allow(unused_variables)]\n#![allow(clippy::all)]\n"
+    )
     assert count_dead_code_allows(tmp_path, list(DEFAULT_EXCLUDES)) == 0
 
 
 def test_count_machete_crates():
     assert count_machete_crates(MACHETE_STDOUT) == 3
-    assert count_machete_crates("cargo-machete didn't find any unused dependencies\nDone!\n") == 0
+    assert (
+        count_machete_crates(
+            "cargo-machete didn't find any unused dependencies\nDone!\n"
+        )
+        == 0
+    )
 
 
 def test_has_cargo_manifest(tmp_path):
     assert not has_cargo_manifest(tmp_path, list(DEFAULT_EXCLUDES))
-    (tmp_path / "target").mkdir(); (tmp_path / "target" / "Cargo.toml").write_text("")
+    (tmp_path / "target").mkdir()
+    (tmp_path / "target" / "Cargo.toml").write_text("")
     assert not has_cargo_manifest(tmp_path, list(DEFAULT_EXCLUDES))
     (tmp_path / "Cargo.toml").write_text("")
     assert has_cargo_manifest(tmp_path, list(DEFAULT_EXCLUDES))
@@ -99,11 +110,16 @@ def test_scan_rust_counts_suppressed_and_unused(tmp_path, monkeypatch):
     (tmp_path / "Cargo.toml").write_text("")
     (tmp_path / "a.rs").write_text("#[allow(dead_code)]\n")
     monkeypatch.setattr("quality_report.deadcode.run_cargo_machete", lambda repo: 2)
-    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) == {"suppressed": 1, "unused_dependencies": 2}
+    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) == {
+        "suppressed": 1,
+        "unused_dependencies": 2,
+    }
 
 
 def test_merge_sums_parts():
-    m = merge_dead_code([{"unused_files": 1}, {"unused_dependencies": 2, "suppressed": 3}])
+    m = merge_dead_code(
+        [{"unused_files": 1}, {"unused_dependencies": 2, "suppressed": 3}]
+    )
     assert m["total"] == 6 and m["by_kind"]["unused_exports"] == 0
 
 
@@ -125,48 +141,68 @@ def test_run_cargo_machete_counts_unused_crate(tmp_path):
         '[package]\nname = "mc"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nitoa = "1"\n'
     )
     assert run_cargo_machete(tmp_path) == 1
-    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) == {"suppressed": 0, "unused_dependencies": 1}
+    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) == {
+        "suppressed": 0,
+        "unused_dependencies": 1,
+    }
 
 
 def _knip(tmp_path, payload):
     import json
+
     f = tmp_path / "k.json"
     f.write_text(json.dumps(payload))
     return parse_knip(f)
 
 
 def test_parse_knip_member_fields_accept_dict_and_list(tmp_path):
-    rec = {"enumMembers": {"E": [{"name": "a"}, {"name": "b"}]}, "classMembers": [{"name": "m"}]}
+    rec = {
+        "enumMembers": {"E": [{"name": "a"}, {"name": "b"}]},
+        "classMembers": [{"name": "m"}],
+    }
     assert _knip(tmp_path, {"files": [], "issues": [rec]})["unused_symbols"] == 3
     rec = {"enumMembers": [{"name": "a"}], "classMembers": {"C": [{"name": "m"}]}}
     assert _knip(tmp_path, {"files": [], "issues": [rec]})["unused_symbols"] == 2
 
 
-@pytest.mark.parametrize("payload", [
-    {"files": [], "issues": [{"enumMembers": 5}]},
-    {"files": 3, "issues": []},
-    {"files": [], "issues": [{"exports": "x"}]},
-    {"files": [], "issues": ["not-a-record"]},
-    {"files": [], "issues": 7},
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"files": [], "issues": [{"enumMembers": 5}]},
+        {"files": 3, "issues": []},
+        {"files": [], "issues": [{"exports": "x"}]},
+        {"files": [], "issues": ["not-a-record"]},
+        {"files": [], "issues": 7},
+    ],
+)
 def test_parse_knip_malformed_is_none_with_warning(tmp_path, capsys, payload):
     assert _knip(tmp_path, payload) is None
     assert "warning" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("payload", [{"vulture": ["x"]}, {"files": []}, {"issues": []}, {}, []])
+@pytest.mark.parametrize(
+    "payload", [{"vulture": ["x"]}, {"files": []}, {"issues": []}, {}, []]
+)
 def test_parse_knip_requires_files_and_issues_keys(tmp_path, capsys, payload):
     assert _knip(tmp_path, payload) is None
     assert "not a knip report" in capsys.readouterr().err
 
 
 def test_parse_knip_null_fields_count_zero(tmp_path):
-    k = _knip(tmp_path, {"files": None, "issues": [{"enumMembers": None, "exports": None}]})
-    assert k == {"unused_files": 0, "unused_exports": 0, "unused_dependencies": 0, "unused_symbols": 0}
+    k = _knip(
+        tmp_path, {"files": None, "issues": [{"enumMembers": None, "exports": None}]}
+    )
+    assert k == {
+        "unused_files": 0,
+        "unused_exports": 0,
+        "unused_dependencies": 0,
+        "unused_symbols": 0,
+    }
 
 
 def _stub_machete(monkeypatch, rc, stdout="", stderr=""):
     import subprocess
+
     result = subprocess.CompletedProcess(["cargo-machete"], rc, stdout, stderr)
     monkeypatch.setattr("quality_report.deadcode.run_tool", lambda *a, **k: result)
 
@@ -177,14 +213,21 @@ def test_machete_rc1_with_crates_is_counted(monkeypatch):
 
 
 def test_machete_rc2_is_none_with_warning(monkeypatch, capsys):
-    _stub_machete(monkeypatch, 2, "", "Analyzing dependencies of crates in x...\nError: Errors when walking over directories")
+    _stub_machete(
+        monkeypatch,
+        2,
+        "",
+        "Analyzing dependencies of crates in x...\nError: Errors when walking over directories",
+    )
     assert run_cargo_machete(Path(".")) is None
     assert "warning" in capsys.readouterr().err
 
 
 def test_machete_manifest_error_is_none_with_warning(monkeypatch, capsys):
     out = "Analyzing dependencies of crates in x...\ncargo-machete didn't find any unused dependencies in x. Good job!\n"
-    _stub_machete(monkeypatch, 0, out, "error when handling x/Cargo.toml: TOML parse error")
+    _stub_machete(
+        monkeypatch, 0, out, "error when handling x/Cargo.toml: TOML parse error"
+    )
     assert run_cargo_machete(Path(".")) is None
     assert "warning" in capsys.readouterr().err
 

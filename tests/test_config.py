@@ -10,7 +10,9 @@ def test_load_config_defaults_when_no_file(tmp_path):
 
 
 def test_load_config_merges_repo_excludes(tmp_path):
-    (tmp_path / ".quality.yml").write_text('exclude: ["**/generated/**"]\ncomplexity_threshold: 7\n')
+    (tmp_path / ".quality.yml").write_text(
+        'exclude: ["**/generated/**"]\ncomplexity_threshold: 7\n'
+    )
     c = load_config(tmp_path)
     assert "**/generated/**" in c.exclude and "node_modules" in c.exclude
     assert c.complexity_threshold == 7

@@ -1,4 +1,5 @@
 """Create the schema and the three database roles (idempotent)."""
+
 from __future__ import annotations
 
 from importlib import resources
@@ -28,13 +29,19 @@ def _ensure_role(cur: psycopg.Cursor, role: str, password: str) -> None:
     name = sql.Identifier(role)
     if cur.fetchone() is None:
         cur.execute(sql.SQL("CREATE ROLE {} LOGIN").format(name))
-    cur.execute(sql.SQL("ALTER ROLE {} PASSWORD {}").format(name, sql.Literal(password)))
+    cur.execute(
+        sql.SQL("ALTER ROLE {} PASSWORD {}").format(name, sql.Literal(password))
+    )
 
 
 def _grant_conflict_key_select(cur: psycopg.Cursor, role: sql.Identifier) -> None:
     # INSERT ... ON CONFLICT (repo, commit, branch) needs SELECT on those key columns.
     # Only the key; the writer still cannot read `raw` or any metric.
-    cur.execute(sql.SQL("GRANT SELECT (repo, commit, branch) ON quality_reports TO {}").format(role))
+    cur.execute(
+        sql.SQL("GRANT SELECT (repo, commit, branch) ON quality_reports TO {}").format(
+            role
+        )
+    )
 
 
 def migrate(admin_url: str, passwords: dict[str, str]) -> None:
@@ -48,7 +55,9 @@ def migrate(admin_url: str, passwords: dict[str, str]) -> None:
         database = sql.Identifier(cur.fetchone()[0])
         for key, role in ROLES.items():
             name = sql.Identifier(role)
-            cur.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(database, name))
+            cur.execute(
+                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(database, name)
+            )
             cur.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(name))
             privileges, tables = _TABLE_GRANTS[key]
             for table in tables:

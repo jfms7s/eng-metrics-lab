@@ -6,29 +6,52 @@ import pytest
 from quality_report.cli import main
 from quality_report.ratchet import can_tighten, check, make_baseline
 
-B = {"schema": 1, "commit": "base", "duplication_percent": 3.4, "dead_code_total": 42,
-     "complexity_threshold": 10, "functions_over_threshold": 57}
+B = {
+    "schema": 1,
+    "commit": "base",
+    "duplication_percent": 3.4,
+    "dead_code_total": 42,
+    "complexity_threshold": 10,
+    "functions_over_threshold": 57,
+}
 
 
 def R(dup=3.4, dead=42, over10=57, over7=100, thr=10, branch="main"):
-    return {"branch": branch, "commit": "abc1234",
-            "duplication": None if dup is None else {"percent": dup},
-            "dead_code": None if dead is None else {"total": dead},
-            "complexity": {"threshold": thr, "functions_over_threshold": over10,
-                           "over": {"7": over7, "10": over10, "15": 1}}}
+    return {
+        "branch": branch,
+        "commit": "abc1234",
+        "duplication": None if dup is None else {"percent": dup},
+        "dead_code": None if dead is None else {"total": dead},
+        "complexity": {
+            "threshold": thr,
+            "functions_over_threshold": over10,
+            "over": {"7": over7, "10": over10, "15": 1},
+        },
+    }
 
 
-@pytest.mark.parametrize("report,result", [
-    (R(), "pass"), (R(dup=3.5), "pass"), (R(dup=3.51), "fail"),
-    (R(dead=43), "fail"), (R(over10=58), "fail"), (R(dead=None), "pass"),
-    (R(dup=None), "pass"),
-])
+@pytest.mark.parametrize(
+    "report,result",
+    [
+        (R(), "pass"),
+        (R(dup=3.5), "pass"),
+        (R(dup=3.51), "fail"),
+        (R(dead=43), "fail"),
+        (R(over10=58), "fail"),
+        (R(dead=None), "pass"),
+        (R(dup=None), "pass"),
+    ],
+)
 def test_ratchet_table(report, result):
     assert check(report, B)["result"] == result
 
 
 def test_ratchet_without_baseline_is_skipped():
-    assert check(R(), None) == {"result": "skipped", "baseline_commit": None, "violations": []}
+    assert check(R(), None) == {
+        "result": "skipped",
+        "baseline_commit": None,
+        "violations": [],
+    }
 
 
 def test_ratchet_compares_at_baseline_threshold():
@@ -38,17 +61,31 @@ def test_ratchet_compares_at_baseline_threshold():
 def test_ratchet_compares_own_count_when_thresholds_match_outside_over_table():
     """Threshold 12 is not in the fixed `over` table; the report's own count is what counts."""
     base = {**B, "complexity_threshold": 12, "functions_over_threshold": 5}
-    report = {**R(thr=12, over10=50), "complexity": {"threshold": 12, "functions_over_threshold": 50,
-                                                      "over": {"7": 100, "10": 60, "15": 1}}}
+    report = {
+        **R(thr=12, over10=50),
+        "complexity": {
+            "threshold": 12,
+            "functions_over_threshold": 50,
+            "over": {"7": 100, "10": 60, "15": 1},
+        },
+    }
     res = check(report, base)
     assert res["result"] == "fail"
-    assert res["violations"] == [{"field": "complexity.functions_over_threshold",
-                                  "baseline": 5, "current": 50, "tolerance": 0}]
+    assert res["violations"] == [
+        {
+            "field": "complexity.functions_over_threshold",
+            "baseline": 5,
+            "current": 50,
+            "tolerance": 0,
+        }
+    ]
 
 
 def test_violation_lists_field_values():
     v = check(R(dead=45), B)["violations"]
-    assert v == [{"field": "dead_code.total", "baseline": 42, "current": 45, "tolerance": 0}]
+    assert v == [
+        {"field": "dead_code.total", "baseline": 42, "current": 45, "tolerance": 0}
+    ]
     assert check(R(), B)["baseline_commit"] == "base"
 
 
@@ -76,9 +113,14 @@ def test_can_tighten_only_when_strictly_better():
 def test_make_baseline_shape_and_nulls():
     now = datetime(2026, 11, 2, 10, 0, tzinfo=UTC)
     assert make_baseline(R(), now) == {
-        "schema": 1, "recorded_at": "2026-11-02T10:00:00Z", "commit": "abc1234",
-        "duplication_percent": 3.4, "dead_code_total": 42,
-        "complexity_threshold": 10, "functions_over_threshold": 57}
+        "schema": 1,
+        "recorded_at": "2026-11-02T10:00:00Z",
+        "commit": "abc1234",
+        "duplication_percent": 3.4,
+        "dead_code_total": 42,
+        "complexity_threshold": 10,
+        "functions_over_threshold": 57,
+    }
     b = make_baseline(R(dup=None, dead=None), now)
     assert b["duplication_percent"] is None and b["dead_code_total"] is None
 
@@ -97,9 +139,15 @@ def test_cli_ratchet_exit_codes(tmp_path, capsys):
     assert main(["ratchet", "--baseline", base, "--report", bad]) == 1
     out = capsys.readouterr().out
     assert "dead_code.total" in out and "fail" in out
-    assert main(["ratchet", "--baseline", str(tmp_path / "none.json"), "--report", ok]) == 0
+    assert (
+        main(["ratchet", "--baseline", str(tmp_path / "none.json"), "--report", ok])
+        == 0
+    )
     assert "skipped" in capsys.readouterr().out
-    assert main(["ratchet", "--baseline", base, "--report", str(tmp_path / "none.json")]) == 2
+    assert (
+        main(["ratchet", "--baseline", base, "--report", str(tmp_path / "none.json")])
+        == 2
+    )
     old = _write(tmp_path, "old.json", {**B, "schema": 2})
     assert main(["ratchet", "--baseline", old, "--report", ok]) == 2
 
@@ -109,7 +157,10 @@ def test_cli_tighten_hint_only_on_main(tmp_path, capsys):
     better = _write(tmp_path, "m.json", R(dead=10))
     other = _write(tmp_path, "o.json", R(dead=10, branch="feat/x"))
     main(["ratchet", "--baseline", base, "--report", better])
-    assert f"quality-report baseline --from {better} > .quality-baseline.json" in capsys.readouterr().out
+    assert (
+        f"quality-report baseline --from {better} > .quality-baseline.json"
+        in capsys.readouterr().out
+    )
     main(["ratchet", "--baseline", base, "--report", other])
     assert "tightened" not in capsys.readouterr().out
 

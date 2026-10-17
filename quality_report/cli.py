@@ -1,4 +1,5 @@
 """quality-report command line: one subcommand per task."""
+
 from __future__ import annotations
 
 import argparse
@@ -32,22 +33,34 @@ def _cmd_ratchet(args: argparse.Namespace) -> int:
         try:
             baseline = _load_json(args.baseline)
         except (OSError, ValueError) as exc:
-            print(f"error: cannot read baseline {args.baseline}: {exc}", file=sys.stderr)
+            print(
+                f"error: cannot read baseline {args.baseline}: {exc}", file=sys.stderr
+            )
             return 2
         if baseline.get("schema") != BASELINE_SCHEMA:
-            print(f"error: unsupported baseline schema {baseline.get('schema')!r} "
-                  f"(expected {BASELINE_SCHEMA})", file=sys.stderr)
+            print(
+                f"error: unsupported baseline schema {baseline.get('schema')!r} "
+                f"(expected {BASELINE_SCHEMA})",
+                file=sys.stderr,
+            )
             return 2
 
     outcome = ratchet.check(report, baseline)
     for v in outcome["violations"]:
-        print(f"{v['field']}: {v['current']} exceeds baseline {v['baseline']} "
-              f"(tolerance {v['tolerance']})")
+        print(
+            f"{v['field']}: {v['current']} exceeds baseline {v['baseline']} "
+            f"(tolerance {v['tolerance']})"
+        )
     print(f"ratchet: {outcome['result']}")
-    if (outcome["result"] == "pass" and report.get("branch") == "main"
-            and ratchet.can_tighten(report, baseline)):
-        print(f"baseline can be tightened: quality-report baseline --from {args.report} "
-              "> .quality-baseline.json")
+    if (
+        outcome["result"] == "pass"
+        and report.get("branch") == "main"
+        and ratchet.can_tighten(report, baseline)
+    ):
+        print(
+            f"baseline can be tightened: quality-report baseline --from {args.report} "
+            "> .quality-baseline.json"
+        )
     return 1 if outcome["result"] == "fail" else 0
 
 
@@ -83,7 +96,9 @@ def _cmd_store(args: argparse.Namespace) -> int:
     except psycopg.Error as exc:
         # libpq echoes fragments of a malformed connection string (password included),
         # so never print its message: only the exception class and SQLSTATE.
-        detail = type(exc).__name__ + (f" (sqlstate {exc.sqlstate})" if exc.sqlstate else "")
+        detail = type(exc).__name__ + (
+            f" (sqlstate {exc.sqlstate})" if exc.sqlstate else ""
+        )
         print(f"error: database error: {detail}", file=sys.stderr)
         return 1
     print("stored" if inserted else "already stored")

@@ -1,4 +1,5 @@
 """Count-based ratchet: a report may not be worse than the committed baseline."""
+
 from __future__ import annotations
 
 import sys
@@ -31,8 +32,11 @@ def _complexity_current(report: dict, baseline: dict) -> int | None:
     over = complexity.get("over") or {}
     key = str(threshold)
     if key not in over:
-        print(f"ratchet: report has no complexity count at baseline threshold {key}; "
-              "skipping complexity", file=sys.stderr)
+        print(
+            f"ratchet: report has no complexity count at baseline threshold {key}; "
+            "skipping complexity",
+            file=sys.stderr,
+        )
         return None
     return over[key]
 
@@ -40,12 +44,24 @@ def _complexity_current(report: dict, baseline: dict) -> int | None:
 def _rows(report: dict, baseline: dict) -> list[tuple[str, object, object, float]]:
     """(field, baseline value, current value, tolerance), only where both are non-null."""
     rows = [
-        ("duplication.percent", baseline.get("duplication_percent"),
-         _duplication_current(report), DUPLICATION_TOLERANCE),
-        ("dead_code.total", baseline.get("dead_code_total"),
-         _dead_code_current(report), 0),
-        (_COMPLEXITY_FIELD, baseline.get("functions_over_threshold"),
-         _complexity_current(report, baseline), 0),
+        (
+            "duplication.percent",
+            baseline.get("duplication_percent"),
+            _duplication_current(report),
+            DUPLICATION_TOLERANCE,
+        ),
+        (
+            "dead_code.total",
+            baseline.get("dead_code_total"),
+            _dead_code_current(report),
+            0,
+        ),
+        (
+            _COMPLEXITY_FIELD,
+            baseline.get("functions_over_threshold"),
+            _complexity_current(report, baseline),
+            0,
+        ),
     ]
     return [r for r in rows if r[1] is not None and r[2] is not None]
 
@@ -67,7 +83,9 @@ def check(report: dict, baseline: dict | None) -> dict:
 
 def can_tighten(report: dict, baseline: dict) -> bool:
     """True when some metric present in both is strictly better than the baseline."""
-    return any(cur < base - tol - _EPSILON for _, base, cur, tol in _rows(report, baseline))
+    return any(
+        cur < base - tol - _EPSILON for _, base, cur, tol in _rows(report, baseline)
+    )
 
 
 def make_baseline(report: dict, now: datetime) -> dict:
@@ -82,5 +100,6 @@ def make_baseline(report: dict, now: datetime) -> dict:
         "dead_code_total": None if dead_code is None else dead_code["total"],
         "complexity_threshold": None if complexity is None else complexity["threshold"],
         "functions_over_threshold": (
-            None if complexity is None else complexity["functions_over_threshold"]),
+            None if complexity is None else complexity["functions_over_threshold"]
+        ),
     }

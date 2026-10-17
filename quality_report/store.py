@@ -1,4 +1,5 @@
 """Flatten a schema-1 report into a quality_reports row and insert it."""
+
 from __future__ import annotations
 
 import psycopg
@@ -8,12 +9,26 @@ CONNECT_TIMEOUT = 10
 _JSON_COLUMNS = ("dead_by_kind", "cc_over_by", "ratchet_violations", "raw")
 
 _COLUMNS = (
-    "repo", "commit", "branch", "generated_at", "ci_system",
-    "dup_percent", "dup_lines", "dup_clones",
-    "dead_total", "dead_by_kind",
-    "cc_threshold", "cc_over", "cc_over_by", "cc_max", "cc_p95", "cc_avg",
-    "nloc", "functions",
-    "ratchet_result", "ratchet_violations",
+    "repo",
+    "commit",
+    "branch",
+    "generated_at",
+    "ci_system",
+    "dup_percent",
+    "dup_lines",
+    "dup_clones",
+    "dead_total",
+    "dead_by_kind",
+    "cc_threshold",
+    "cc_over",
+    "cc_over_by",
+    "cc_max",
+    "cc_p95",
+    "cc_avg",
+    "nloc",
+    "functions",
+    "ratchet_result",
+    "ratchet_violations",
     "raw",
 )
 

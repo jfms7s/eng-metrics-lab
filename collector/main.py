@@ -1,4 +1,5 @@
 """quality-collector: load quality-report artifacts from GitHub into Postgres."""
+
 from __future__ import annotations
 
 import argparse
@@ -48,7 +49,9 @@ def _check_trusted(repo: str, artifact: Artifact, report: dict | None = None) ->
         raise _Rejected("report commit differs from the run's commit")
 
 
-def _collect_repo(conn, session, owner: str, repo: str, since: datetime) -> CollectStats:
+def _collect_repo(
+    conn, session, owner: str, repo: str, since: datetime
+) -> CollectStats:
     stats = CollectStats()
     for artifact in list_report_artifacts(session, owner, repo, since):
         try:
@@ -72,8 +75,11 @@ def _collect_repo(conn, session, owner: str, repo: str, since: datetime) -> Coll
         except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
             # Message may carry a URL or payload fragment; keep to class (and status, if any).
             status = getattr(getattr(exc, "response", None), "status_code", None)
-            warn(f"{repo}: artifact {artifact.id} failed ({type(exc).__name__}"
-                 + (f", HTTP {status}" if status else "") + ")")
+            warn(
+                f"{repo}: artifact {artifact.id} failed ({type(exc).__name__}"
+                + (f", HTTP {status}" if status else "")
+                + ")"
+            )
             stats.failed += 1
             continue
         if stored:
@@ -83,7 +89,9 @@ def _collect_repo(conn, session, owner: str, repo: str, since: datetime) -> Coll
     return stats
 
 
-def collect(conn, session, owner: str, repos: list[str], since: datetime) -> CollectStats:
+def collect(
+    conn, session, owner: str, repos: list[str], since: datetime
+) -> CollectStats:
     """Load every recent report of `repos`; a CollectorError from GitHub propagates."""
     total = CollectStats()
     for repo in repos:
@@ -110,12 +118,19 @@ def _db_error(exc: psycopg.Error) -> str:
 
 def _cmd_collect(_args: argparse.Namespace) -> int:
     missing = _missing(
-        ["QUALITY_COLLECTOR_URL", "GITHUB_TOKEN", "QUALITY_GITHUB_OWNER", "QUALITY_GITHUB_REPOS"]
+        [
+            "QUALITY_COLLECTOR_URL",
+            "GITHUB_TOKEN",
+            "QUALITY_GITHUB_OWNER",
+            "QUALITY_GITHUB_REPOS",
+        ]
     )
     if missing:
         print(f"error: {missing} is not set", file=sys.stderr)
         return 2
-    repos = [r.strip() for r in os.environ["QUALITY_GITHUB_REPOS"].split(",") if r.strip()]
+    repos = [
+        r.strip() for r in os.environ["QUALITY_GITHUB_REPOS"].split(",") if r.strip()
+    ]
     if not repos:
         print("error: QUALITY_GITHUB_REPOS names no repositories", file=sys.stderr)
         return 2
@@ -147,10 +162,14 @@ def _cmd_collect(_args: argparse.Namespace) -> int:
 
 
 def _cmd_migrate(_args: argparse.Namespace) -> int:
-    missing = _missing([
-        "QUALITY_ADMIN_URL", "QUALITY_WRITER_PASSWORD",
-        "QUALITY_COLLECTOR_PASSWORD", "QUALITY_GRAFANA_PASSWORD",
-    ])
+    missing = _missing(
+        [
+            "QUALITY_ADMIN_URL",
+            "QUALITY_WRITER_PASSWORD",
+            "QUALITY_COLLECTOR_PASSWORD",
+            "QUALITY_GRAFANA_PASSWORD",
+        ]
+    )
     if missing:
         print(f"error: {missing} is not set", file=sys.stderr)
         return 2
@@ -172,8 +191,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="quality-collector")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("collect", help="load recent quality-report artifacts").set_defaults(
-        func=_cmd_collect)
-    sub.add_parser("migrate", help="create the schema and roles").set_defaults(func=_cmd_migrate)
+        func=_cmd_collect
+    )
+    sub.add_parser("migrate", help="create the schema and roles").set_defaults(
+        func=_cmd_migrate
+    )
     return parser
 
 

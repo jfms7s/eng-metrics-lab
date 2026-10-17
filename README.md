@@ -5,7 +5,7 @@
 ## Tests
 
 ```bash
-uv venv --python 3.12 .venv
+uv venv --python 3.11 .venv
 uv pip install -e '.[dev]'
 .venv/bin/pytest -m "not tools and not db"
 ```

@@ -37,7 +37,8 @@ def detect_languages(repo: Path, exclude: list[str]) -> list[str]:
         rel_root = root_path.relative_to(repo)
         depth = len(rel_root.parts)
         dirs[:] = [
-            d for d in dirs
+            d
+            for d in dirs
             if depth < MAX_DEPTH and not is_excluded(rel_root / d, exclude)
         ]
         for name in files:
