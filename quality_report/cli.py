@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from quality_report import ratchet
+from quality_report import report as report_run
 
 BASELINE_SCHEMA = 1
 
@@ -57,6 +58,12 @@ def _cmd_baseline(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_run(args: argparse.Namespace) -> int:
+    config = Path(args.config) if args.config else None
+    report_run.run_and_print(Path.cwd(), Path(args.out), config)
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="quality-report")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -69,6 +76,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("baseline", help="print a baseline from a report")
     p.add_argument("--from", dest="source", required=True, metavar="PATH")
     p.set_defaults(func=_cmd_baseline)
+
+    p = sub.add_parser("run", help="measure the current directory and write the report")
+    p.add_argument("--config", metavar="PATH")
+    p.add_argument("--out", required=True, metavar="PATH")
+    p.set_defaults(func=_cmd_run)
     return parser
 
 
