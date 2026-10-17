@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from quality_report import ratchet
+import psycopg
+
+from quality_report import ratchet, store
 from quality_report import report as report_run
 
 BASELINE_SCHEMA = 1
@@ -64,6 +67,27 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_store(args: argparse.Namespace) -> int:
+    url = os.environ.get("QUALITY_DB_URL")
+    if not url:
+        print("error: QUALITY_DB_URL is not set", file=sys.stderr)
+        return 2
+    try:
+        report = _load_json(args.report)
+    except (OSError, ValueError) as exc:
+        print(f"error: cannot read report {args.report}: {exc}", file=sys.stderr)
+        return 2
+    try:
+        with store.connect(url) as conn:
+            inserted = store.insert_report(conn, report)
+    except psycopg.Error as exc:
+        # Never print the URL: it carries the password.
+        print(f"error: database: {exc}", file=sys.stderr)
+        return 1
+    print("stored" if inserted else "already stored")
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="quality-report")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -81,6 +105,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", metavar="PATH")
     p.add_argument("--out", required=True, metavar="PATH")
     p.set_defaults(func=_cmd_run)
+
+    p = sub.add_parser("store", help="store a report in Postgres (QUALITY_DB_URL)")
+    p.add_argument("report", metavar="PATH")
+    p.set_defaults(func=_cmd_store)
     return parser
 
 

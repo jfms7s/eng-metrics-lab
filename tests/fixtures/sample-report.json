@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "repo": "jfms7s/example",
+  "commit": "abc1234def5678abc1234def5678abc1234def56",
+  "branch": "main",
+  "ci": {"system": "github", "run": "12345"},
+  "generated_at": "2026-10-17T10:00:00Z",
+  "tools": {"jscpd": "4.0.5", "lizard": "1.17.10"},
+  "languages": ["typescript", "rust"],
+  "size": {"files": 120, "nloc": 18400, "functions": 950},
+  "duplication": {"percent": 3.4, "duplicated_lines": 626, "clones": 41},
+  "dead_code": {"total": 23, "by_kind": {"files": 2, "exports": 14, "dependencies": 3, "suppressed": 4}},
+  "complexity": {
+    "metric": "cyclomatic",
+    "threshold": 10,
+    "functions_over_threshold": 57,
+    "over": {"7": 112, "10": 57, "15": 19},
+    "max": 48,
+    "p95": 12,
+    "avg": 3.1
+  },
+  "ratchet": {"result": "pass", "baseline_commit": "0123abc", "violations": []}
+}

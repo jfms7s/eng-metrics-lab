@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Measure duplication, dead code and cyclomatic complexity in CI"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["pyyaml"]
+dependencies = ["pyyaml", "psycopg[binary]>=3.2"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
@@ -17,7 +17,10 @@ dev = ["pytest", "ruff"]
 quality-report = "quality_report.cli:main"
 
 [tool.setuptools]
-packages = ["quality_report"]
+packages = ["quality_report", "collector"]
+
+[tool.setuptools.package-data]
+collector = ["schema.sql"]
 
 [tool.pytest.ini_options]
 markers = [
