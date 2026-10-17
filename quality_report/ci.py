@@ -1,6 +1,7 @@
 """Where a run came from (repo, commit, branch, CI system) and which tools it used."""
 from __future__ import annotations
 
+import importlib.metadata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,8 +82,8 @@ def resolve_context(env: Mapping[str, str], repo_path: Path) -> RunContext:
 
 
 def tool_versions() -> dict[str, str]:
-    """Versions of the tools the quality step runs; tools that are missing or fail are omitted."""
-    versions: dict[str, str] = {}
+    """Versions of quality-report and the tools it runs; tools that are missing or fail are omitted."""
+    versions: dict[str, str] = {"quality-report": importlib.metadata.version("quality-report")}
     for name, cmd in _TOOL_VERSION_COMMANDS.items():
         result = run_tool(cmd, timeout=_VERSION_TIMEOUT)
         if result is None or result.returncode != 0:

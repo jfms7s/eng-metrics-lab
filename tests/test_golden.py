@@ -1,4 +1,5 @@
 """End-to-end runs over the fixture repos with the real tools (pytest -m tools)."""
+import importlib.metadata
 import shutil
 from pathlib import Path
 
@@ -26,6 +27,8 @@ def test_ts_mini(out):
     assert r["complexity"]["functions_over_threshold"] == 1
     assert r["complexity"]["over"] == {"7": 1, "10": 1, "15": 0}
     assert r["languages"] == ["typescript"]
+    assert r["tools"]["quality-report"] == importlib.metadata.version("quality-report")
+    assert {"jscpd", "lizard", "cargo-machete"} <= set(r["tools"])
 
 
 def test_rust_mini(out):

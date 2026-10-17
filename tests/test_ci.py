@@ -1,3 +1,5 @@
+import importlib.metadata
+
 from pathlib import Path
 
 from quality_report.ci import RunContext, resolve_context, tool_versions
@@ -51,6 +53,6 @@ def test_resolve_context_without_git_is_unknown(tmp_path, monkeypatch, capsys):
     assert "warning" in capsys.readouterr().err
 
 
-def test_tool_versions_with_empty_path_is_empty(monkeypatch):
+def test_tool_versions_with_empty_path_reports_only_quality_report(monkeypatch):
     monkeypatch.setenv("PATH", "")
-    assert tool_versions() == {}
+    assert tool_versions() == {"quality-report": importlib.metadata.version("quality-report")}
