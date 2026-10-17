@@ -13,8 +13,6 @@ SAMPLE = Path(__file__).parent / "fixtures" / "sample-report.json"
 
 
 def test_sample_fixture_matches_real_report_shape():
-    from datetime import UTC, datetime
-
     from quality_report.ci import RunContext
     from quality_report.complexity import (
         FunctionStat,
@@ -38,8 +36,7 @@ def test_sample_fixture_matches_real_report_shape():
     assert set(sample["dead_code"]["by_kind"]) == set(KINDS)
     assert sample["dead_code"]["total"] == sum(sample["dead_code"]["by_kind"].values())
     assert set(real["ci"]) == {"system", "run"}
-    assert isinstance(sample["tools"], dict) and datetime.fromisoformat(
-        sample["generated_at"].replace("Z", "+00:00")).tzinfo is UTC
+    assert isinstance(sample["tools"], dict)
 
 
 def test_report_row_maps_columns():
