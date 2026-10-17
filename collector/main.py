@@ -36,6 +36,14 @@ def _collect_repo(conn, session, owner: str, repo: str, since: datetime) -> Coll
         try:
             report = download_report(session, owner, repo, artifact.id)
             stored = insert_report(conn, report)
+        except psycopg.OperationalError:
+            raise  # connection-level failure: fatal for the run, handled in _cmd_collect
+        except psycopg.Error as exc:
+            # A report the database rejects (bad value, constraint) must not poison the run.
+            conn.rollback()
+            warn(f"{repo}: artifact {artifact.id} failed ({_db_error(exc)})")
+            stats.failed += 1
+            continue
         except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
             # Message may carry a URL or payload fragment; keep to class (and status, if any).
             status = getattr(getattr(exc, "response", None), "status_code", None)

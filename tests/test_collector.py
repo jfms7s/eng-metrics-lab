@@ -192,6 +192,11 @@ ENV = {
 
 
 class FakeConn:
+    rollbacks = 0
+
+    def rollback(self):
+        self.rollbacks += 1
+
     def __enter__(self):
         return self
 
@@ -300,3 +305,36 @@ def test_main_migrate_db_error_is_secret_safe(monkeypatch, capsys):
     assert main(["migrate"]) == 1
     err = capsys.readouterr().err
     assert "OperationalError" in err and "adminpw" not in err
+
+
+@responses.activate
+def test_db_rejected_report_is_failed_rolled_back_and_run_continues(monkeypatch, report, capsys):
+    import psycopg
+    conn = FakeConn()
+    seen = []
+
+    def fake_insert(c, rep):
+        seen.append(rep["commit"])
+        if rep["commit"] == "bad":
+            raise psycopg.errors.DataError("invalid input postgresql://u:dbpass@h/q")
+        return True
+
+    monkeypatch.setattr(cmain, "insert_report", fake_insert)
+    monkeypatch.setattr(cmain, "connect", lambda url: conn)
+    for k, v in ENV.items():
+        monkeypatch.setenv(k, v)
+    url = f"https://api.github.com/repos/{OWNER}/{REPO}/actions/artifacts"
+    responses.add(responses.GET, url, json={"artifacts": [artifact(1, 0.1), artifact(2, 0.2)]})
+    responses.add(responses.GET, f"{url}/1/zip", body=zip_bytes(report("bad")))
+    responses.add(responses.GET, f"{url}/2/zip", body=zip_bytes(report("good")))
+    other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
+    responses.add(responses.GET, other, json={"artifacts": [artifact(3, 0.1)]})
+    responses.add(responses.GET, f"{other}/3/zip", body=zip_bytes(report("next")))
+
+    assert main(["collect"]) == 1
+    captured = capsys.readouterr()
+    assert f"{REPO} inserted=1 skipped=0 failed=1" in captured.out
+    assert "other inserted=1 skipped=0 failed=0" in captured.out
+    assert conn.rollbacks == 1
+    assert seen == ["bad", "good", "next"]
+    assert "DataError" in captured.err and "dbpass" not in captured.out + captured.err
