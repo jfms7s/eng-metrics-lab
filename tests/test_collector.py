@@ -29,12 +29,17 @@ def zip_bytes(report: dict | None = None, name: str = "report.json", raw: bytes 
     return buf.getvalue()
 
 
-def artifact(id_, age_days=0.0, expired=False, branch="main", sha="abc"):
+def artifact(id_, age_days=0.0, expired=False, branch="main", sha=None, repo_id=None, head_repo_id=None):
+    run = {"head_branch": branch, "head_sha": sha or f"c{id_}"}
+    if repo_id is not None:
+        run["repository_id"] = repo_id
+    if head_repo_id is not None:
+        run["head_repository_id"] = head_repo_id
     return {
         "id": id_,
         "created_at": (NOW - timedelta(days=age_days)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "expired": expired,
-        "workflow_run": {"head_branch": branch, "head_sha": sha},
+        "workflow_run": run,
     }
 
 
@@ -52,8 +57,8 @@ def add_zip(id_, body):
 
 @pytest.fixture
 def report(sample):
-    def make(commit):
-        return {**sample, "commit": commit}
+    def make(commit, repo=REPO):
+        return {**sample, "commit": commit, "repo": repo}
     return make
 
 
@@ -138,7 +143,7 @@ def test_collect_overlapping_window_counts_skipped(gh_mock, stored):
 
 def test_collect_prints_summary_line(gh_mock, stored, capsys):
     collect(None, session(), OWNER, [REPO], since())
-    assert capsys.readouterr().out.strip() == f"{REPO} inserted=1 skipped=0 failed=0"
+    assert capsys.readouterr().out.strip() == f"{REPO} inserted=1 skipped=0 rejected=0 failed=0"
 
 
 @responses.activate
@@ -222,11 +227,14 @@ def test_collect_missing_env_exits_2(main_env, monkeypatch, capsys, missing):
 def test_main_collect_success_trims_repos(main_env, report, capsys):
     for repo, sha in ((REPO, "c1"), ("other", "c2")):
         url = f"https://api.github.com/repos/{OWNER}/{repo}/actions/artifacts"
-        responses.add(responses.GET, url, json={"artifacts": [artifact(1, 0.1)]})
-        responses.add(responses.GET, f"{url}/1/zip", body=zip_bytes(report(sha)))
+        responses.add(responses.GET, url, json={"artifacts": [artifact(1, 0.1, sha=sha)]})
+        responses.add(responses.GET, f"{url}/1/zip", body=zip_bytes(report(sha, repo)))
     assert main(["collect"]) == 0
     out = capsys.readouterr().out.splitlines()
-    assert out == [f"{REPO} inserted=1 skipped=0 failed=0", "other inserted=1 skipped=0 failed=0"]
+    assert out == [
+        f"{REPO} inserted=1 skipped=0 rejected=0 failed=0",
+        "other inserted=1 skipped=0 rejected=0 failed=0",
+    ]
 
 
 @responses.activate
@@ -236,7 +244,7 @@ def test_main_collect_exits_1_on_failed_but_processes_other_repos(main_env, repo
     responses.add(responses.GET, f"{url}/1/zip", body=b"corrupt")
     other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
     responses.add(responses.GET, other, json={"artifacts": [artifact(2, 0.1)]})
-    responses.add(responses.GET, f"{other}/2/zip", body=zip_bytes(report("c2")))
+    responses.add(responses.GET, f"{other}/2/zip", body=zip_bytes(report("c2", "other")))
     assert main(["collect"]) == 1
     assert "other inserted=1" in capsys.readouterr().out
 
@@ -246,7 +254,7 @@ def test_main_collect_401_exits_1_and_never_leaks_token(main_env, report, capsys
     responses.add(responses.GET, LIST_URL, status=401, json={"message": "Bad credentials"})
     other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
     responses.add(responses.GET, other, json={"artifacts": [artifact(2, 0.1)]})
-    responses.add(responses.GET, f"{other}/2/zip", body=zip_bytes(report("c2")))
+    responses.add(responses.GET, f"{other}/2/zip", body=zip_bytes(report("c2", "other")))
     assert main(["collect"]) == 1
     captured = capsys.readouterr()
     assert "401" in captured.err
@@ -324,17 +332,118 @@ def test_db_rejected_report_is_failed_rolled_back_and_run_continues(monkeypatch,
     for k, v in ENV.items():
         monkeypatch.setenv(k, v)
     url = f"https://api.github.com/repos/{OWNER}/{REPO}/actions/artifacts"
-    responses.add(responses.GET, url, json={"artifacts": [artifact(1, 0.1), artifact(2, 0.2)]})
+    responses.add(responses.GET, url, json={"artifacts": [artifact(1, 0.1, sha="bad"), artifact(2, 0.2, sha="good")]})
     responses.add(responses.GET, f"{url}/1/zip", body=zip_bytes(report("bad")))
     responses.add(responses.GET, f"{url}/2/zip", body=zip_bytes(report("good")))
     other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
-    responses.add(responses.GET, other, json={"artifacts": [artifact(3, 0.1)]})
-    responses.add(responses.GET, f"{other}/3/zip", body=zip_bytes(report("next")))
+    responses.add(responses.GET, other, json={"artifacts": [artifact(3, 0.1, sha="next")]})
+    responses.add(responses.GET, f"{other}/3/zip", body=zip_bytes(report("next", "other")))
 
     assert main(["collect"]) == 1
     captured = capsys.readouterr()
-    assert f"{REPO} inserted=1 skipped=0 failed=1" in captured.out
-    assert "other inserted=1 skipped=0 failed=0" in captured.out
+    assert f"{REPO} inserted=1 skipped=0 rejected=0 failed=1" in captured.out
+    assert "other inserted=1 skipped=0 rejected=0 failed=0" in captured.out
     assert conn.rollbacks == 1
     assert seen == ["bad", "good", "next"]
     assert "DataError" in captured.err and "dbpass" not in captured.out + captured.err
+
+
+# --- untrusted artifact contents (ruling R19) ---
+
+def _one_artifact(art, body):
+    responses.add(responses.GET, LIST_URL, json={"artifacts": [art]})
+    add_zip(art["id"], body)
+
+
+@responses.activate
+def test_list_captures_repository_ids():
+    responses.add(responses.GET, LIST_URL, json={"artifacts": [
+        artifact(1, 0.1, repo_id=10, head_repo_id=10), artifact(2, 0.1)]})
+    a, b = list_report_artifacts(session(), OWNER, REPO, since())
+    assert (a.repository_id, a.head_repository_id, a.from_trusted_repo) == (10, 10, True)
+    assert (b.repository_id, b.head_repository_id, b.from_trusted_repo) == (None, None, True)
+
+
+@pytest.mark.parametrize("repo_id,head_repo_id", [(10, 99), (10, None), (None, 10)])
+@responses.activate
+def test_fork_and_unverifiable_artifacts_are_rejected_without_download(stored, report, capsys, repo_id, head_repo_id):
+    responses.add(responses.GET, LIST_URL, json={"artifacts": [
+        artifact(1, 0.1, repo_id=repo_id, head_repo_id=head_repo_id)]})
+    s = collect(None, session(), OWNER, [REPO], since())
+    assert (s.inserted, s.rejected, s.failed) == (0, 1, 0)
+    assert not stored
+    assert len(responses.calls) == 1  # listing only, no zip fetched
+    captured = capsys.readouterr()
+    assert f"{REPO} inserted=0 skipped=0 rejected=1 failed=0" in captured.out
+    assert "artifact 1 rejected" in captured.err and TOKEN not in captured.err
+
+
+@responses.activate
+def test_same_repo_artifact_is_collected(stored, report):
+    _one_artifact(artifact(1, 0.1, repo_id=10, head_repo_id=10), zip_bytes(report("c1")))
+    assert collect(None, session(), OWNER, [REPO], since()).inserted == 1
+
+
+@responses.activate
+def test_report_naming_another_repo_is_rejected(stored, report, capsys):
+    _one_artifact(artifact(1, 0.1), zip_bytes(report("c1", repo="victim")))
+    s = collect(None, session(), OWNER, [REPO], since())
+    assert (s.inserted, s.rejected, s.failed) == (0, 1, 0)
+    assert not stored
+    assert "different repository" in capsys.readouterr().err
+
+
+@responses.activate
+def test_report_commit_differing_from_run_commit_is_rejected(stored, report, capsys):
+    _one_artifact(artifact(1, 0.1, sha="realsha"), zip_bytes(report("forged")))
+    s = collect(None, session(), OWNER, [REPO], since())
+    assert (s.inserted, s.rejected, s.failed) == (0, 1, 0)
+    assert not stored
+    assert "commit differs" in capsys.readouterr().err
+
+
+@responses.activate
+def test_rejections_do_not_fail_the_run(main_env, report, capsys):
+    responses.add(responses.GET, LIST_URL, json={"artifacts": [artifact(1, 0.1, repo_id=1, head_repo_id=2)]})
+    other = f"https://api.github.com/repos/{OWNER}/other/actions/artifacts"
+    responses.add(responses.GET, other, json={"artifacts": []})
+    assert main(["collect"]) == 0
+
+
+@responses.activate
+def test_download_over_cap_by_content_length_is_failed(monkeypatch, stored):
+    monkeypatch.setattr("collector.github.MAX_DOWNLOAD_BYTES", 100)
+    _one_artifact(artifact(1, 0.1), b"x" * 101)
+    s = collect(None, session(), OWNER, [REPO], since())
+    assert (s.inserted, s.failed, s.rejected) == (0, 1, 0)
+
+
+def test_streamed_body_over_cap_is_refused_without_content_length(monkeypatch):
+    from collector.github import BadReportError, _read_capped
+
+    class Stub:
+        headers: dict = {}
+
+        @staticmethod
+        def iter_content(_size):
+            yield b"x" * 60
+            yield b"x" * 60
+
+    monkeypatch.setattr("collector.github.MAX_DOWNLOAD_BYTES", 100)
+    with pytest.raises(BadReportError, match="size limit"):
+        _read_capped(Stub)
+
+
+@responses.activate
+def test_report_json_over_cap_is_failed(monkeypatch, stored, report):
+    monkeypatch.setattr("collector.github.MAX_REPORT_BYTES", 50)
+    _one_artifact(artifact(1, 0.1), zip_bytes(report("c1")))
+    s = collect(None, session(), OWNER, [REPO], since())
+    assert (s.inserted, s.failed) == (0, 1)
+    assert not stored
+
+
+@responses.activate
+def test_report_just_under_cap_is_accepted(report):
+    add_zip(1, zip_bytes(report("c1")))
+    assert download_report(session(), OWNER, REPO, 1)["commit"] == "c1"

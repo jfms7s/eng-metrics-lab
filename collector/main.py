@@ -11,6 +11,7 @@ import psycopg
 import requests
 
 from collector.github import (
+    Artifact,
     CollectorError,
     download_report,
     list_report_artifacts,
@@ -27,15 +28,39 @@ DEFAULT_LOOKBACK_DAYS = 3
 class CollectStats:
     inserted: int = 0
     skipped: int = 0
+    rejected: int = 0
     failed: int = 0
+
+
+class _Rejected(Exception):
+    """An artifact that must not be stored; the reason is safe to log."""
+
+
+def _check_trusted(repo: str, artifact: Artifact, report: dict | None = None) -> None:
+    """Artifact contents and origin are untrusted input: raise _Rejected unless they match `repo`."""
+    if not artifact.from_trusted_repo:
+        raise _Rejected("produced by a fork")
+    if report is None:
+        return
+    if report.get("repo") != repo:
+        raise _Rejected("report names a different repository")
+    if report.get("commit") != artifact.head_sha:
+        raise _Rejected("report commit differs from the run's commit")
 
 
 def _collect_repo(conn, session, owner: str, repo: str, since: datetime) -> CollectStats:
     stats = CollectStats()
     for artifact in list_report_artifacts(session, owner, repo, since):
         try:
+            _check_trusted(repo, artifact)
             report = download_report(session, owner, repo, artifact.id)
+            _check_trusted(repo, artifact, report)
             stored = insert_report(conn, report)
+        except _Rejected as exc:
+            # Fork artifacts recur every night, so a rejection is reported but never fails the run.
+            warn(f"{repo}: artifact {artifact.id} rejected ({exc})")
+            stats.rejected += 1
+            continue
         except psycopg.OperationalError:
             raise  # connection-level failure: fatal for the run, handled in _cmd_collect
         except psycopg.Error as exc:
@@ -63,9 +88,13 @@ def collect(conn, session, owner: str, repos: list[str], since: datetime) -> Col
     total = CollectStats()
     for repo in repos:
         stats = _collect_repo(conn, session, owner, repo, since)
-        print(f"{repo} inserted={stats.inserted} skipped={stats.skipped} failed={stats.failed}")
+        print(
+            f"{repo} inserted={stats.inserted} skipped={stats.skipped} "
+            f"rejected={stats.rejected} failed={stats.failed}"
+        )
         total.inserted += stats.inserted
         total.skipped += stats.skipped
+        total.rejected += stats.rejected
         total.failed += stats.failed
     return total
 

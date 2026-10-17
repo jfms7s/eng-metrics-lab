@@ -13,6 +13,9 @@ API = "https://api.github.com"
 TIMEOUT = 30
 PER_PAGE = 100
 REPORT_FILE = "report.json"
+MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
+MAX_REPORT_BYTES = 2 * 1024 * 1024
+_CHUNK = 64 * 1024
 _AUTH_STATUSES = (401, 403, 404)
 
 
@@ -31,6 +34,20 @@ class Artifact:
     expired: bool
     head_branch: str
     head_sha: str
+    repository_id: int | None = None
+    head_repository_id: int | None = None
+
+    @property
+    def from_trusted_repo(self) -> bool:
+        """True if the producing run belongs to the repository itself, not a fork.
+
+        A public repo's artifact list includes fork-PR runs, whose contents the fork's author
+        controls. With neither id present (older payloads) the artifact is assumed first-party;
+        with only one present it cannot be verified, so it is not trusted.
+        """
+        if self.repository_id is None and self.head_repository_id is None:
+            return True
+        return self.repository_id is not None and self.repository_id == self.head_repository_id
 
 
 def new_session(token: str) -> requests.Session:
@@ -56,6 +73,8 @@ def _to_artifact(raw: dict) -> Artifact:
         expired=bool(raw.get("expired")),
         head_branch=run.get("head_branch") or "",
         head_sha=run.get("head_sha") or "",
+        repository_id=run.get("repository_id"),
+        head_repository_id=run.get("head_repository_id"),
     )
 
 
@@ -86,16 +105,37 @@ def list_report_artifacts(
         page += 1
 
 
+def _read_capped(resp: requests.Response) -> bytes:
+    """The response body, refusing anything over MAX_DOWNLOAD_BYTES (checked up front and while streaming)."""
+    declared = resp.headers.get("Content-Length", "")
+    if declared.isdigit() and int(declared) > MAX_DOWNLOAD_BYTES:
+        raise BadReportError("artifact download exceeds the size limit")
+    body = bytearray()
+    for chunk in resp.iter_content(_CHUNK):
+        body += chunk
+        if len(body) > MAX_DOWNLOAD_BYTES:
+            raise BadReportError("artifact download exceeds the size limit")
+    return bytes(body)
+
+
 def download_report(
     session: requests.Session, owner: str, repo: str, artifact_id: int
 ) -> dict:
     """Download an artifact zip and return its parsed report.json."""
     resp = session.get(
-        f"{API}/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip", timeout=TIMEOUT
+        f"{API}/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip",
+        timeout=TIMEOUT,
+        stream=True,
     )
-    resp.raise_for_status()
     try:
-        with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+        resp.raise_for_status()
+        content = _read_capped(resp)
+    finally:
+        resp.close()
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            if archive.getinfo(REPORT_FILE).file_size > MAX_REPORT_BYTES:
+                raise BadReportError(f"{REPORT_FILE} exceeds the size limit")
             data = archive.read(REPORT_FILE)
     except zipfile.BadZipFile:
         raise BadReportError("artifact is not a valid zip") from None
