@@ -24,7 +24,11 @@ _MACHETE_CRATE = re.compile(r"^\t\S+$")
 
 
 def parse_knip(path: Path) -> dict[str, int] | None:
-    """Dead-code counts from a knip JSON fragment; None if absent or unusable."""
+    """Dead-code counts from a knip JSON fragment; None if absent or unusable.
+
+    A usable fragment is a JSON object carrying both of knip's top-level keys,
+    `files` and `issues`; anything else (e.g. another tool's output) is rejected.
+    """
     if not path.exists():
         return None
     try:
@@ -32,7 +36,7 @@ def parse_knip(path: Path) -> dict[str, int] | None:
     except (OSError, ValueError) as exc:
         warn(f"knip fragment {path} is not valid JSON ({exc}); skipped")
         return None
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) or not {"files", "issues"} <= data.keys():
         warn(f"knip fragment {path} is empty or not a knip report; skipped")
         return None
 
@@ -108,7 +112,8 @@ def run_cargo_machete(repo: Path) -> int | None:
     return count_machete_crates(result.stdout)
 
 
-def _has_cargo_manifest(repo: Path, exclude: list[str]) -> bool:
+def has_cargo_manifest(repo: Path, exclude: list[str]) -> bool:
+    """True if a non-excluded Cargo.toml exists, i.e. the Rust scan is expected."""
     for root, dirs, files in os.walk(repo):
         rel_root = Path(root).relative_to(repo)
         dirs[:] = [d for d in dirs if not is_excluded(rel_root / d, exclude)]
@@ -118,20 +123,26 @@ def _has_cargo_manifest(repo: Path, exclude: list[str]) -> bool:
 
 
 def scan_rust(repo: Path, exclude: list[str]) -> dict[str, int] | None:
-    """Rust dead-code signals; None when the repo has no Cargo.toml."""
-    if not _has_cargo_manifest(repo, exclude):
-        return None
-    counts = {"suppressed": count_dead_code_allows(repo, exclude)}
+    """Rust dead-code signals for a repo that has a Cargo.toml; None if cargo-machete is broken."""
     unused = run_cargo_machete(repo)
-    if unused is not None:
-        counts["unused_dependencies"] = unused
-    return counts
+    if unused is None:
+        return None
+    return {
+        "suppressed": count_dead_code_allows(repo, exclude),
+        "unused_dependencies": unused,
+    }
 
 
 def merge_dead_code(parts: list[dict[str, int] | None]) -> dict | None:
-    """Sum per-kind counts across parts; None if no part has data."""
-    present = [p for p in parts if p is not None]
-    if not present:
+    """Sum per-kind counts across the *expected* parts; None if any is broken or none is expected.
+
+    Each entry is a part the repo should have produced: a count dict, or None when that
+    part was expected but is unusable (crashed knip, broken cargo-machete). A part the
+    repo does not have (no knip fragment, no Cargo.toml) is simply left out of the list.
+    A partial total would look like an improvement to the ratchet, so one broken part
+    makes the whole figure null.
+    """
+    if not parts or any(p is None for p in parts):
         return None
-    by_kind = {kind: sum(p.get(kind, 0) for p in present) for kind in KINDS}
+    by_kind = {kind: sum(p.get(kind, 0) for p in parts) for kind in KINDS}
     return {"total": sum(by_kind.values()), "by_kind": by_kind}

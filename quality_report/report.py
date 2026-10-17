@@ -18,7 +18,7 @@ from quality_report.complexity import (
     summarize_size,
 )
 from quality_report.config import load_config
-from quality_report.deadcode import merge_dead_code, parse_knip, scan_rust
+from quality_report.deadcode import has_cargo_manifest, merge_dead_code, parse_knip, scan_rust
 from quality_report.detect import detect_languages
 from quality_report.duplication import duplication_formats, parse_jscpd_report, run_jscpd
 from quality_report.tools import warn
@@ -26,7 +26,7 @@ from quality_report.tools import warn
 SCHEMA_VERSION = 1
 BASELINE_FILENAME = ".quality-baseline.json"
 FRAGMENT_DIR = ".quality"
-FRAGMENT_GLOB = "deadcode-*.json"
+KNIP_FRAGMENT = "deadcode-ts.json"
 MAX_OFFENDERS_PRINTED = 10
 
 _SKIPPED_RATCHET = {"result": "skipped", "baseline_commit": None, "violations": []}
@@ -96,9 +96,14 @@ def _measure_duplication(
 
 
 def _measure_dead_code(repo: Path, exclude: list[str]) -> dict | None:
-    fragments = sorted((repo / FRAGMENT_DIR).glob(FRAGMENT_GLOB))
-    parts = [parse_knip(path) for path in fragments]
-    parts.append(scan_rust(repo, exclude))
+    # Only parts the repo is expected to have: a missing knip fragment or a repo without
+    # Cargo.toml contributes nothing, while a present-but-unusable one (None) nulls the total.
+    parts: list[dict[str, int] | None] = []
+    knip_fragment = repo / FRAGMENT_DIR / KNIP_FRAGMENT
+    if knip_fragment.exists():
+        parts.append(parse_knip(knip_fragment))
+    if has_cargo_manifest(repo, exclude):
+        parts.append(scan_rust(repo, exclude))
     return merge_dead_code(parts)
 
 

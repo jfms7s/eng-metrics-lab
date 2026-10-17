@@ -105,3 +105,45 @@ def test_run_config_override_lets_duplication_run_without_languages(tmp_path, mo
     )
     run(repo, tmp_path / "r.json", env=CTX_ENV)
     assert seen == [["yaml"]]
+
+
+def _fragment(repo: Path, content: str) -> None:
+    (repo / ".quality").mkdir(exist_ok=True)
+    (repo / ".quality" / "deadcode-ts.json").write_text(content)
+
+
+def _rust_repo(tmp_path: Path, monkeypatch, machete) -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "Cargo.toml").write_text("")
+    (repo / "a.rs").write_text("#[allow(dead_code)]\n")
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr("quality_report.deadcode.run_cargo_machete", lambda repo: machete)
+    return repo
+
+
+def test_dead_code_null_when_knip_fragment_unusable_even_with_rust_ok(tmp_path, monkeypatch):
+    repo = _rust_repo(tmp_path, monkeypatch, machete=0)
+    _fragment(repo, "")
+    assert run(repo, tmp_path / "r.json", env=CTX_ENV)["dead_code"] is None
+
+
+def test_dead_code_null_when_machete_broken_in_rust_repo(tmp_path, monkeypatch):
+    repo = _rust_repo(tmp_path, monkeypatch, machete=None)
+    _fragment(repo, (FIX / "knip-sample.json").read_text())
+    assert run(repo, tmp_path / "r.json", env=CTX_ENV)["dead_code"] is None
+
+
+def test_dead_code_missing_fragment_is_not_broken(tmp_path, monkeypatch):
+    repo = _rust_repo(tmp_path, monkeypatch, machete=2)
+    by_kind = run(repo, tmp_path / "r.json", env=CTX_ENV)["dead_code"]["by_kind"]
+    assert by_kind["unused_dependencies"] == 2 and by_kind["suppressed"] == 1
+
+
+def test_dead_code_ignores_other_fragments(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".quality").mkdir()
+    (repo / ".quality" / "deadcode-py.json").write_text('{"vulture": []}')
+    monkeypatch.setenv("PATH", "")
+    assert run(repo, tmp_path / "r.json", env=CTX_ENV)["dead_code"] is None

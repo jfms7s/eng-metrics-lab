@@ -6,6 +6,7 @@ from quality_report.config import DEFAULT_EXCLUDES
 from quality_report.deadcode import (
     count_dead_code_allows,
     count_machete_crates,
+    has_cargo_manifest,
     merge_dead_code,
     parse_knip,
     run_cargo_machete,
@@ -79,29 +80,39 @@ def test_count_machete_crates():
     assert count_machete_crates("cargo-machete didn't find any unused dependencies\nDone!\n") == 0
 
 
-def test_scan_rust_without_cargo_toml_is_none(tmp_path):
-    (tmp_path / "a.rs").write_text("#[allow(dead_code)]\n")
-    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) is None
-
-
-def test_scan_rust_ignores_excluded_cargo_toml(tmp_path):
+def test_has_cargo_manifest(tmp_path):
+    assert not has_cargo_manifest(tmp_path, list(DEFAULT_EXCLUDES))
     (tmp_path / "target").mkdir(); (tmp_path / "target" / "Cargo.toml").write_text("")
-    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) is None
+    assert not has_cargo_manifest(tmp_path, list(DEFAULT_EXCLUDES))
+    (tmp_path / "Cargo.toml").write_text("")
+    assert has_cargo_manifest(tmp_path, list(DEFAULT_EXCLUDES))
 
 
-def test_scan_rust_reports_suppressed_when_machete_missing(tmp_path, monkeypatch):
+def test_scan_rust_is_none_when_machete_broken(tmp_path, monkeypatch):
     (tmp_path / "Cargo.toml").write_text("")
     (tmp_path / "a.rs").write_text("#[allow(dead_code)]\n")
     monkeypatch.setattr("quality_report.deadcode.run_cargo_machete", lambda repo: None)
-    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) == {"suppressed": 1}
+    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) is None
 
 
-def test_merge_sums_and_ignores_none():
-    m = merge_dead_code([{"unused_files": 1}, None, {"unused_dependencies": 2, "suppressed": 3}])
+def test_scan_rust_counts_suppressed_and_unused(tmp_path, monkeypatch):
+    (tmp_path / "Cargo.toml").write_text("")
+    (tmp_path / "a.rs").write_text("#[allow(dead_code)]\n")
+    monkeypatch.setattr("quality_report.deadcode.run_cargo_machete", lambda repo: 2)
+    assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) == {"suppressed": 1, "unused_dependencies": 2}
+
+
+def test_merge_sums_parts():
+    m = merge_dead_code([{"unused_files": 1}, {"unused_dependencies": 2, "suppressed": 3}])
     assert m["total"] == 6 and m["by_kind"]["unused_exports"] == 0
 
 
-def test_merge_all_none_is_none():
+def test_merge_no_expected_parts_is_none():
+    assert merge_dead_code([]) is None
+
+
+def test_merge_any_broken_part_makes_total_null():
+    assert merge_dead_code([{"unused_files": 1}, None]) is None
     assert merge_dead_code([None, None]) is None
 
 
@@ -128,19 +139,25 @@ def test_parse_knip_member_fields_accept_dict_and_list(tmp_path):
     rec = {"enumMembers": {"E": [{"name": "a"}, {"name": "b"}]}, "classMembers": [{"name": "m"}]}
     assert _knip(tmp_path, {"files": [], "issues": [rec]})["unused_symbols"] == 3
     rec = {"enumMembers": [{"name": "a"}], "classMembers": {"C": [{"name": "m"}]}}
-    assert _knip(tmp_path, {"issues": [rec]})["unused_symbols"] == 2
+    assert _knip(tmp_path, {"files": [], "issues": [rec]})["unused_symbols"] == 2
 
 
 @pytest.mark.parametrize("payload", [
-    {"issues": [{"enumMembers": 5}]},
-    {"files": 3},
-    {"issues": [{"exports": "x"}]},
-    {"issues": ["not-a-record"]},
-    {"issues": 7},
+    {"files": [], "issues": [{"enumMembers": 5}]},
+    {"files": 3, "issues": []},
+    {"files": [], "issues": [{"exports": "x"}]},
+    {"files": [], "issues": ["not-a-record"]},
+    {"files": [], "issues": 7},
 ])
 def test_parse_knip_malformed_is_none_with_warning(tmp_path, capsys, payload):
     assert _knip(tmp_path, payload) is None
     assert "warning" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("payload", [{"vulture": ["x"]}, {"files": []}, {"issues": []}, {}, []])
+def test_parse_knip_requires_files_and_issues_keys(tmp_path, capsys, payload):
+    assert _knip(tmp_path, payload) is None
+    assert "not a knip report" in capsys.readouterr().err
 
 
 def test_parse_knip_null_fields_count_zero(tmp_path):
