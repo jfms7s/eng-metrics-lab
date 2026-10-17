@@ -3,10 +3,10 @@ from __future__ import annotations
 import csv
 import io
 import math
-import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from quality_report.tools import run_tool, warn
 
 OVER_THRESHOLDS = (7, 10, 15)
 
@@ -21,10 +21,6 @@ class FunctionStat:
     name: str
     ccn: int
     nloc: int
-
-
-def _warn(message: str) -> None:
-    print(f"quality-report: warning: {message}", file=sys.stderr)
 
 
 def lizard_exclude_args(exclude: list[str]) -> list[str]:
@@ -46,15 +42,12 @@ def lizard_exclude_args(exclude: list[str]) -> list[str]:
 
 def run_lizard(repo: Path, exclude: list[str]) -> str | None:
     """Run `lizard --csv` over the repo; None (with a warning) if it is missing or fails."""
-    cmd = ["lizard", "--csv", *lizard_exclude_args(exclude), "."]
-    try:
-        result = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
-    except FileNotFoundError:
-        _warn("lizard not found; complexity skipped")
+    result = run_tool(["lizard", "--csv", *lizard_exclude_args(exclude), "."], cwd=repo)
+    if result is None:
         return None
     if result.returncode != 0:
         detail = result.stderr.strip().splitlines()[-1:] or [f"exit code {result.returncode}"]
-        _warn(f"lizard failed ({detail[0]}); complexity skipped")
+        warn(f"lizard failed ({detail[0]}); complexity skipped")
         return None
     return result.stdout
 

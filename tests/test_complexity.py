@@ -72,3 +72,16 @@ def test_run_lizard_honours_excludes(tmp_path):
         path.write_text(f"function f{i}(x) {{ if (x) {{ return {i} }} return 2 }}\n")
     out = run_lizard(tmp_path, ["node_modules", "vendor", "*.d.ts"])
     assert [f.file for f in parse_lizard_csv(out, tmp_path)] == ["src/a.ts"]
+
+
+def test_run_tool_timeout_warns_and_returns_none(monkeypatch, capsys):
+    import subprocess
+
+    from quality_report.tools import run_tool
+
+    def boom(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="x", timeout=1)
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert run_tool(["x"], timeout=1) is None
+    assert "timed out" in capsys.readouterr().err
