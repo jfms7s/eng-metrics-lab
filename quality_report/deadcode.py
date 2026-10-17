@@ -36,13 +36,31 @@ def parse_knip(path: Path) -> dict[str, int] | None:
         warn(f"knip fragment {path} is empty or not a knip report; skipped")
         return None
 
+    try:
+        return _count_knip(data)
+    except (TypeError, AttributeError) as exc:
+        warn(f"knip fragment {path} has an unexpected shape ({exc}); skipped")
+        return None
+
+
+def _len_of(value: object) -> int:
+    """Items in a knip finding list; a dict of {name: [members]} counts its members."""
+    if value is None:
+        return 0
+    if isinstance(value, dict):
+        return sum(len(members) for members in value.values())
+    if isinstance(value, list):
+        return len(value)
+    raise TypeError(f"expected list or object, got {type(value).__name__}")
+
+
+def _count_knip(data: dict) -> dict[str, int]:
     counts = dict.fromkeys(("unused_files", "unused_exports", "unused_dependencies", "unused_symbols"), 0)
-    counts["unused_files"] = len(data.get("files", []))
-    for record in data.get("issues", []):
+    counts["unused_files"] = _len_of(data.get("files"))
+    for record in data.get("issues") or []:
         for kind, fields in _KNIP_LIST_FIELDS.items():
-            counts[kind] += sum(len(record.get(f, [])) for f in fields)
-        for field in _KNIP_MEMBER_FIELDS:
-            counts["unused_symbols"] += sum(len(m) for m in record.get(field, {}).values())
+            counts[kind] += sum(_len_of(record.get(f)) for f in fields)
+        counts["unused_symbols"] += sum(_len_of(record.get(f)) for f in _KNIP_MEMBER_FIELDS)
     return counts
 
 
@@ -70,15 +88,22 @@ def count_machete_crates(output: str) -> int:
 
 
 def run_cargo_machete(repo: Path) -> int | None:
-    """Unused-crate count from cargo-machete; None (with a warning) if it cannot run.
+    """Unused-crate count from cargo-machete; None (with a warning) if the run is broken.
 
-    machete exits non-zero when it finds unused crates, so the exit code is ignored.
+    Exit code 1 just means "unused crates found" and is not a failure. Anything
+    above 1, a run that never printed machete's "Analyzing dependencies" banner (e.g. the subcommand is
+    not installed), or per-manifest errors on stderr mean the count is unreliable.
     """
     result = run_tool(["cargo", "machete", str(repo)])
     if result is None:
         return None
-    if "no such command" in result.stderr:
-        warn("cargo-machete not installed; skipped")
+    combined = result.stdout + result.stderr
+    detail = (result.stderr.strip().splitlines() or ["no error output"])[0]
+    if result.returncode > 1 or "Analyzing dependencies" not in combined:
+        warn(f"cargo-machete failed or is not installed (exit {result.returncode}: {detail}); skipped")
+        return None
+    if "error when handling" in combined:
+        warn("cargo-machete could not process some manifests; skipped")
         return None
     return count_machete_crates(result.stdout)
 

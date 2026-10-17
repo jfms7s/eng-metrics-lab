@@ -115,3 +115,64 @@ def test_run_cargo_machete_counts_unused_crate(tmp_path):
     )
     assert run_cargo_machete(tmp_path) == 1
     assert scan_rust(tmp_path, list(DEFAULT_EXCLUDES)) == {"suppressed": 0, "unused_dependencies": 1}
+
+
+def _knip(tmp_path, payload):
+    import json
+    f = tmp_path / "k.json"
+    f.write_text(json.dumps(payload))
+    return parse_knip(f)
+
+
+def test_parse_knip_member_fields_accept_dict_and_list(tmp_path):
+    rec = {"enumMembers": {"E": [{"name": "a"}, {"name": "b"}]}, "classMembers": [{"name": "m"}]}
+    assert _knip(tmp_path, {"files": [], "issues": [rec]})["unused_symbols"] == 3
+    rec = {"enumMembers": [{"name": "a"}], "classMembers": {"C": [{"name": "m"}]}}
+    assert _knip(tmp_path, {"issues": [rec]})["unused_symbols"] == 2
+
+
+@pytest.mark.parametrize("payload", [
+    {"issues": [{"enumMembers": 5}]},
+    {"files": 3},
+    {"issues": [{"exports": "x"}]},
+    {"issues": ["not-a-record"]},
+    {"issues": 7},
+])
+def test_parse_knip_malformed_is_none_with_warning(tmp_path, capsys, payload):
+    assert _knip(tmp_path, payload) is None
+    assert "warning" in capsys.readouterr().err
+
+
+def test_parse_knip_null_fields_count_zero(tmp_path):
+    k = _knip(tmp_path, {"files": None, "issues": [{"enumMembers": None, "exports": None}]})
+    assert k == {"unused_files": 0, "unused_exports": 0, "unused_dependencies": 0, "unused_symbols": 0}
+
+
+def _stub_machete(monkeypatch, rc, stdout="", stderr=""):
+    import subprocess
+    result = subprocess.CompletedProcess(["cargo"], rc, stdout, stderr)
+    monkeypatch.setattr("quality_report.deadcode.run_tool", lambda *a, **k: result)
+
+
+def test_machete_rc1_with_crates_is_counted(monkeypatch):
+    _stub_machete(monkeypatch, 1, MACHETE_STDOUT)
+    assert run_cargo_machete(Path(".")) == 3
+
+
+def test_machete_rc2_is_none_with_warning(monkeypatch, capsys):
+    _stub_machete(monkeypatch, 2, "", "Analyzing dependencies of crates in x...\nError: Errors when walking over directories")
+    assert run_cargo_machete(Path(".")) is None
+    assert "warning" in capsys.readouterr().err
+
+
+def test_machete_manifest_error_is_none_with_warning(monkeypatch, capsys):
+    out = "Analyzing dependencies of crates in x...\ncargo-machete didn't find any unused dependencies in x. Good job!\n"
+    _stub_machete(monkeypatch, 0, out, "error when handling x/Cargo.toml: TOML parse error")
+    assert run_cargo_machete(Path(".")) is None
+    assert "warning" in capsys.readouterr().err
+
+
+def test_machete_not_installed_is_none_with_warning(monkeypatch, capsys):
+    _stub_machete(monkeypatch, 101, "", "error: no such subcommand: `machete`")
+    assert run_cargo_machete(Path(".")) is None
+    assert "warning" in capsys.readouterr().err
