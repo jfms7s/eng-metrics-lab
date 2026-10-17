@@ -20,7 +20,7 @@ from quality_report.complexity import (
 from quality_report.config import load_config
 from quality_report.deadcode import merge_dead_code, parse_knip, scan_rust
 from quality_report.detect import detect_languages
-from quality_report.duplication import parse_jscpd_report, run_jscpd
+from quality_report.duplication import duplication_formats, parse_jscpd_report, run_jscpd
 from quality_report.tools import warn
 
 SCHEMA_VERSION = 1
@@ -79,8 +79,19 @@ def _measure_complexity(repo: Path, exclude: list[str]) -> list[FunctionStat]:
     return [] if csv_text is None else parse_lizard_csv(csv_text, repo)
 
 
-def _measure_duplication(repo: Path, exclude: list[str], min_tokens: int, out_dir: Path) -> dict | None:
-    report_path = run_jscpd(repo, exclude, min_tokens, out_dir)
+def _measure_duplication(
+    repo: Path,
+    exclude: list[str],
+    min_tokens: int,
+    out_dir: Path,
+    languages: list[str],
+    formats_override: list[str] | None,
+) -> dict | None:
+    formats = duplication_formats(languages, formats_override)
+    if not formats:
+        warn("no code languages detected and no duplication_formats set; duplication skipped")
+        return None
+    report_path = run_jscpd(repo, exclude, min_tokens, out_dir, formats)
     return None if report_path is None else parse_jscpd_report(report_path, min_tokens)
 
 
@@ -108,14 +119,22 @@ def _run(
     config = load_config(repo, config_path)
     ctx = resolve_context(env, repo)
     functions = _measure_complexity(repo, config.exclude)
+    languages = detect_languages(repo, config.exclude)
 
     report = build_report(
         ctx,
-        detect_languages(repo, config.exclude),
+        languages,
         tool_versions(),
         summarize_size(functions),
         # jscpd's output goes beside the report, never inside the analysed repo.
-        _measure_duplication(repo, config.exclude, config.duplication_min_tokens, out.parent / "jscpd"),
+        _measure_duplication(
+            repo,
+            config.exclude,
+            config.duplication_min_tokens,
+            out.parent / "jscpd",
+            languages,
+            config.duplication_formats,
+        ),
         _measure_dead_code(repo, config.exclude),
         summarize_complexity(functions, config.complexity_threshold),
         _SKIPPED_RATCHET,

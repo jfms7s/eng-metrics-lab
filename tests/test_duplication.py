@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 
 from quality_report.config import DEFAULT_EXCLUDES
-from quality_report.duplication import jscpd_ignore_globs, parse_jscpd_report, run_jscpd
+from quality_report.duplication import (
+    duplication_formats,
+    jscpd_ignore_globs,
+    parse_jscpd_report,
+    run_jscpd,
+)
 
 
 def test_parse_jscpd_report_totals():
@@ -34,7 +39,7 @@ def test_ignore_globs_accept_all_defaults():
 
 def test_run_jscpd_missing_warns_and_returns_none(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("PATH", str(tmp_path))
-    assert run_jscpd(tmp_path, [], 50, tmp_path / "out") is None
+    assert run_jscpd(tmp_path, [], 50, tmp_path / "out", ["typescript"]) is None
     assert capsys.readouterr().err.startswith("quality-report: warning:")
 
 
@@ -47,10 +52,22 @@ def test_run_jscpd_honours_excludes(tmp_path):
         path = repo / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body + "\n")
-    report = run_jscpd(repo, list(DEFAULT_EXCLUDES), 50, tmp_path / "out")
+    report = run_jscpd(repo, list(DEFAULT_EXCLUDES), 50, tmp_path / "out", ["typescript"])
     assert report is not None
     assert parse_jscpd_report(report, 50)["clones"] == 0  # only src/a.ts survives
 
     (repo / "src" / "b.ts").write_text(body + "\n")
-    report = run_jscpd(repo, list(DEFAULT_EXCLUDES), 50, tmp_path / "out2")
+    report = run_jscpd(repo, list(DEFAULT_EXCLUDES), 50, tmp_path / "out2", ["typescript"])
     assert parse_jscpd_report(report, 50)["clones"] == 1
+
+
+def test_duplication_formats_derived_from_languages():
+    assert duplication_formats(["typescript"], None) == ["typescript", "javascript", "tsx", "jsx"]
+    assert duplication_formats(["go", "python", "rust"], None) == ["go", "python", "rust"]
+    assert duplication_formats([], None) == []
+
+
+def test_duplication_formats_override_wins():
+    assert duplication_formats(["typescript"], ["sql"]) == ["sql"]
+    assert duplication_formats([], ["yaml"]) == ["yaml"]
+    assert duplication_formats(["rust"], []) == []

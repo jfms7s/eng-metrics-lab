@@ -83,3 +83,25 @@ def test_format_summary_null_metrics_are_na():
     report = {"duplication": None, "dead_code": None, "complexity": None, "ratchet": SKIPPED}
     assert format_summary(report, []) == [
         "quality: duplication n/a, dead code n/a, functions over threshold n/a, max CCN n/a, ratchet skipped"]
+
+
+def test_run_without_code_languages_skips_duplication_with_warning(tmp_path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("PATH", "")
+    r = run(repo, tmp_path / "r.json", env=CTX_ENV)
+    assert r["duplication"] is None
+    assert "duplication skipped" in capsys.readouterr().err
+
+
+def test_run_config_override_lets_duplication_run_without_languages(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".quality.yml").write_text("duplication_formats: [yaml]\n")
+    seen = []
+    monkeypatch.setattr(
+        "quality_report.report.run_jscpd",
+        lambda repo, exclude, min_tokens, out_dir, formats: seen.append(formats),
+    )
+    run(repo, tmp_path / "r.json", env=CTX_ENV)
+    assert seen == [["yaml"]]

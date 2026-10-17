@@ -30,11 +30,37 @@ def jscpd_ignore_globs(exclude: list[str]) -> list[str]:
     return globs
 
 
-def run_jscpd(repo: Path, exclude: list[str], min_tokens: int, out_dir: Path) -> Path | None:
+_LANGUAGE_FORMATS: dict[str, tuple[str, ...]] = {
+    "typescript": ("typescript", "javascript", "tsx", "jsx"),
+    "rust": ("rust",),
+    "python": ("python",),
+    "go": ("go",),
+}
+
+
+def duplication_formats(languages: list[str], override: list[str] | None) -> list[str]:
+    """jscpd `--format` names: the config override, else those of the detected languages.
+
+    Restricting jscpd to code formats keeps YAML, Markdown, SQL and the like out of the figure.
+    """
+    if override is not None:
+        return list(override)
+    formats: list[str] = []
+    for language in languages:
+        for fmt in _LANGUAGE_FORMATS.get(language, ()):
+            if fmt not in formats:
+                formats.append(fmt)
+    return formats
+
+
+def run_jscpd(
+    repo: Path, exclude: list[str], min_tokens: int, out_dir: Path, formats: list[str]
+) -> Path | None:
     """Run jscpd over the repo; the JSON report path, or None (with a warning) on any failure."""
     cmd = [
         "jscpd",
         "--min-tokens", str(min_tokens),
+        "--format", ",".join(formats),
         "--reporters", "json",
         "--output", str(out_dir),
         "--ignore", ",".join(jscpd_ignore_globs(exclude)),

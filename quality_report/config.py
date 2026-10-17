@@ -35,6 +35,7 @@ class Config:
     exclude: list[str]
     complexity_threshold: int = 10
     duplication_min_tokens: int = 50
+    duplication_formats: list[str] | None = None
 
 
 def load_config(repo: Path, path: Path | None = None) -> Config:
@@ -48,7 +49,7 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
                 raise ValueError(f"{config_path}: expected a mapping at top level")
             raw = loaded
 
-    known = {"exclude", "complexity_threshold", "duplication_min_tokens"}
+    known = {"exclude", "complexity_threshold", "duplication_min_tokens", "duplication_formats"}
     unknown = sorted(set(raw) - known)
     if unknown:
         raise ValueError(f"{config_path}: unknown key(s): {', '.join(unknown)}")
@@ -58,9 +59,16 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
         raise TypeError(f"{config_path}: 'exclude' must be a list")
     exclude = list(DEFAULT_EXCLUDES) + [e for e in extra if e not in DEFAULT_EXCLUDES]
 
+    formats = raw.get("duplication_formats")
+    if formats is not None and (
+        not isinstance(formats, list) or not all(isinstance(f, str) for f in formats)
+    ):
+        raise TypeError(f"{config_path}: 'duplication_formats' must be a list of strings")
+
     defaults = Config(exclude=exclude)
     return Config(
         exclude=exclude,
         complexity_threshold=int(raw.get("complexity_threshold", defaults.complexity_threshold)),
         duplication_min_tokens=int(raw.get("duplication_min_tokens", defaults.duplication_min_tokens)),
+        duplication_formats=formats,
     )
