@@ -1,12 +1,15 @@
 import io
 import json
+import threading
 import zipfile
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 import requests
 import responses
 
+import collector.github as cgithub
 import collector.main as cmain
 from collector.github import (
     CollectorError,
@@ -552,3 +555,75 @@ def test_report_json_over_cap_is_failed(monkeypatch, stored, report):
 def test_report_just_under_cap_is_accepted(report):
     add_zip(1, zip_bytes(report("c1")))
     assert download_report(session(), OWNER, REPO, 1)["commit"] == "c1"
+
+
+class _ArtifactServer:
+    """Local HTTP server answering the artifact zip URL from a scripted status list."""
+
+    def __init__(self, statuses, body):
+        self.statuses = list(statuses)
+        self.requests = 0
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                outer.requests += 1
+                status = outer.statuses.pop(0) if outer.statuses else 200
+                payload = body if status == 200 else b""
+                self.send_response(status)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *args):
+                pass
+
+        self.httpd = HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.httpd.server_port}"
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.thread.join()
+
+
+def _plain_http_session():
+    """A new_session whose retry adapter also serves http:// with no backoff delay."""
+    s = session()
+    adapter = s.get_adapter("https://")
+    adapter.max_retries = adapter.max_retries.new(backoff_factor=0)
+    s.mount("http://", adapter)
+    return s
+
+
+def test_session_retry_policy():
+    retry = session().get_adapter("https://").max_retries
+    assert retry.total == 3
+    assert retry.connect == 3
+    assert retry.read == 3
+    assert retry.status == 3
+    assert retry.backoff_factor == 1
+    assert set(retry.status_forcelist) == {429, 500, 502, 503, 504}
+    assert retry.allowed_methods == frozenset({"GET"})
+    assert retry.respect_retry_after_header is True
+    assert retry.raise_on_status is False
+
+
+def test_download_retries_transient_server_error(monkeypatch, sample):
+    with _ArtifactServer([503, 503, 200], zip_bytes(sample)) as server:
+        monkeypatch.setattr(cgithub, "API", server.url)
+        assert download_report(_plain_http_session(), OWNER, REPO, 7) == sample
+        assert server.requests == 3
+
+
+def test_download_does_not_retry_404(monkeypatch):
+    with _ArtifactServer([404], b"") as server:
+        monkeypatch.setattr(cgithub, "API", server.url)
+        with pytest.raises(requests.HTTPError):
+            download_report(_plain_http_session(), OWNER, REPO, 7)
+        assert server.requests == 1
