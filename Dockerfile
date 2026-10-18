@@ -15,6 +15,8 @@ RUN apt-get update \
 FROM docker.io/library/node:22-bookworm-slim
 ARG JSCPD_VERSION=4.3.0
 ARG LIZARD_VERSION=1.24.1
+ARG VULTURE_VERSION=2.16
+ARG DEPTRY_VERSION=0.25.1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-venv git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -22,7 +24,7 @@ RUN npm install -g "jscpd@${JSCPD_VERSION}" && npm cache clean --force
 COPY --from=machete /tmp/cargo-machete /usr/local/bin/cargo-machete
 COPY . /src
 RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir "lizard==${LIZARD_VERSION}" /src \
+    && /opt/venv/bin/pip install --no-cache-dir "lizard==${LIZARD_VERSION}" "vulture==${VULTURE_VERSION}" "deptry==${DEPTRY_VERSION}" /src \
     && rm -rf /src
 ENV PATH=/opt/venv/bin:$PATH
 WORKDIR /work
