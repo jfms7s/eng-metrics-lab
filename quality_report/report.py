@@ -117,15 +117,28 @@ def _measure_dead_code(
     A language whose source is missing or broken (a knip or Go fragment that was not
     produced, a crashed scanner) makes the total null, as does a repo with no languages.
     """
-    fragments = repo / FRAGMENT_DIR
-    sources = {
-        "typescript": lambda: parse_knip(fragments / KNIP_FRAGMENT),
-        "rust": lambda: scan_rust(repo, exclude),
-        "python": lambda: scan_python(repo, exclude),
-        "go": lambda: parse_go_deadcode(fragments / GO_FRAGMENT),
+    fragments = {
+        "typescript": (KNIP_FRAGMENT, parse_knip),
+        "go": (GO_FRAGMENT, parse_go_deadcode),
     }
-    parts = [sources[lang]() if lang in sources else None for lang in languages]
-    return merge_dead_code(parts)
+    scanners = {"rust": scan_rust, "python": scan_python}
+
+    def measure(language: str) -> dict[str, int] | None:
+        if language in scanners:
+            return scanners[language](repo, exclude)
+        if language not in fragments:
+            warn(f"{language} detected but has no dead-code source; dead_code null")
+            return None
+        name, parse = fragments[language]
+        fragment = repo / FRAGMENT_DIR / name
+        if not fragment.exists():
+            warn(
+                f"{language} detected but {FRAGMENT_DIR}/{name} is missing; dead_code null"
+            )
+            return None
+        return parse(fragment)
+
+    return merge_dead_code([measure(lang) for lang in languages])
 
 
 def run(

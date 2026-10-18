@@ -225,16 +225,26 @@ def _ts_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_dead_code_null_when_ts_fragment_missing(tmp_path):
+def test_dead_code_null_when_ts_fragment_missing(tmp_path, capsys):
     repo = _ts_repo(tmp_path)
     assert _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["typescript"]) is None
+    err = capsys.readouterr().err
+    assert "typescript detected but .quality/deadcode-ts.json is missing" in err
 
 
-def test_dead_code_null_when_go_fragment_missing(tmp_path):
+def test_dead_code_null_with_warning_for_language_without_source(tmp_path, capsys):
+    assert _measure_dead_code(tmp_path, list(DEFAULT_EXCLUDES), ["cobol"]) is None
+    assert "cobol detected but has no dead-code source" in capsys.readouterr().err
+
+
+def test_dead_code_null_when_go_fragment_missing(tmp_path, capsys):
     repo = _ts_repo(tmp_path)
     _fragment(repo, (FIX / "knip-sample.json").read_text())
     assert (
         _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["go", "typescript"]) is None
+    )
+    assert "go detected but .quality/deadcode-go.json is missing" in (
+        capsys.readouterr().err
     )
 
 
