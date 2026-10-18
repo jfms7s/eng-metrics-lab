@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 API = "https://api.github.com"
 TIMEOUT = 30
@@ -18,6 +20,17 @@ MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 MAX_REPORT_BYTES = 2 * 1024 * 1024
 _CHUNK = 64 * 1024
 _AUTH_STATUSES = (401, 403, 404)
+RETRY = Retry(
+    total=3,
+    connect=3,
+    read=3,
+    status=3,
+    backoff_factor=1,
+    status_forcelist=(429, 500, 502, 503, 504),
+    allowed_methods=frozenset({"GET"}),
+    respect_retry_after_header=True,
+    raise_on_status=False,
+)
 
 
 class CollectorError(Exception):
@@ -63,6 +76,7 @@ def new_session(token: str) -> requests.Session:
             "X-GitHub-Api-Version": "2022-11-28",
         }
     )
+    session.mount("https://", HTTPAdapter(max_retries=RETRY))
     return session
 
 

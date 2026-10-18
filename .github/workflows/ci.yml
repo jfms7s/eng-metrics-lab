@@ -1,10 +1,10 @@
 name: ci
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
-  packages: read
 jobs:
   test:
     runs-on: ubuntu-latest

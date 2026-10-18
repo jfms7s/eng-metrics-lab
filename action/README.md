@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read   # the image is private
     steps:
       - uses: actions/checkout@v4
       - uses: jfms7s/eng-metrics-lab/action@v0

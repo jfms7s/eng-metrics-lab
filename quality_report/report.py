@@ -20,9 +20,11 @@ from quality_report.complexity import (
 )
 from quality_report.config import load_config
 from quality_report.deadcode import (
-    has_cargo_manifest,
+    GO_FRAGMENT,
     merge_dead_code,
+    parse_go_deadcode,
     parse_knip,
+    scan_python,
     scan_rust,
 )
 from quality_report.detect import detect_languages
@@ -107,16 +109,36 @@ def _measure_duplication(
     return None if report_path is None else parse_jscpd_report(report_path, min_tokens)
 
 
-def _measure_dead_code(repo: Path, exclude: list[str]) -> dict | None:
-    # Only parts the repo is expected to have: a missing knip fragment or a repo without
-    # Cargo.toml contributes nothing, while a present-but-unusable one (None) nulls the total.
-    parts: list[dict[str, int] | None] = []
-    knip_fragment = repo / FRAGMENT_DIR / KNIP_FRAGMENT
-    if knip_fragment.exists():
-        parts.append(parse_knip(knip_fragment))
-    if has_cargo_manifest(repo, exclude):
-        parts.append(scan_rust(repo, exclude))
-    return merge_dead_code(parts)
+def _measure_dead_code(
+    repo: Path, exclude: list[str], languages: list[str]
+) -> dict | None:
+    """Merged dead code over every detected language; None if any has no usable source.
+
+    A language whose source is missing or broken (a knip or Go fragment that was not
+    produced, a crashed scanner) makes the total null, as does a repo with no languages.
+    """
+    fragments = {
+        "typescript": (KNIP_FRAGMENT, parse_knip),
+        "go": (GO_FRAGMENT, parse_go_deadcode),
+    }
+    scanners = {"rust": scan_rust, "python": scan_python}
+
+    def measure(language: str) -> dict[str, int] | None:
+        if language in scanners:
+            return scanners[language](repo, exclude)
+        if language not in fragments:
+            warn(f"{language} detected but has no dead-code source; dead_code null")
+            return None
+        name, parse = fragments[language]
+        fragment = repo / FRAGMENT_DIR / name
+        if not fragment.exists():
+            warn(
+                f"{language} detected but {FRAGMENT_DIR}/{name} is missing; dead_code null"
+            )
+            return None
+        return parse(fragment)
+
+    return merge_dead_code([measure(lang) for lang in languages])
 
 
 def run(
@@ -152,7 +174,7 @@ def _run(
             languages,
             config.duplication_formats,
         ),
-        _measure_dead_code(repo, config.exclude),
+        _measure_dead_code(repo, config.exclude, languages),
         summarize_complexity(functions, config.complexity_threshold),
         _SKIPPED_RATCHET,
     )

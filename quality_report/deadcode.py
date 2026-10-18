@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
+from fnmatch import fnmatch
 from pathlib import Path
 
-from quality_report.detect import is_excluded
+from quality_report.detect import MAX_DEPTH, is_excluded
 from quality_report.tools import run_tool, warn
 
 KINDS = (
@@ -32,6 +34,18 @@ _KNIP_MEMBER_FIELDS = ("enumMembers", "classMembers")
 _DEAD_CODE_ALLOW = re.compile(
     r"#!?\[\s*(?:allow|expect)\s*\([^\]]*\bdead_code\b[^\]]*\)\s*\]"
 )
+GO_FRAGMENT = "deadcode-go.json"
+_PYTHON_MANIFESTS = ("pyproject.toml", "setup.py", "requirements*.txt")
+_VULTURE_FOUND_EXIT = 3
+# vulture's per-file error lines on stderr: an unreadable file, a file with null bytes,
+# and a syntax error (`path:line: msg`, but not Python's `path:line: XWarning: msg`).
+_VULTURE_FILE_ERROR = re.compile(
+    r"^(?:Error: Could not read file "
+    r"|\S[^:]*: invalid source code "
+    r"|\S[^:]*:\d+: (?!\w*Warning: ))"
+)
+_DEPTRY_FOUND_EXIT = 1
+_DEPTRY_UNUSED_DEPENDENCY = "DEP002"
 _MACHETE_CRATE = re.compile(r"^\t\S+$")
 
 
@@ -151,14 +165,174 @@ def scan_rust(repo: Path, exclude: list[str]) -> dict[str, int] | None:
     }
 
 
+def python_sources(repo: Path, exclude: list[str]) -> list[Path]:
+    """Repo-relative paths of non-excluded *.py files, matched like every other exclude."""
+    sources: list[Path] = []
+    for root, dirs, files in os.walk(repo):
+        rel_root = Path(root).relative_to(repo)
+        dirs[:] = sorted(d for d in dirs if not is_excluded(rel_root / d, exclude))
+        sources.extend(
+            rel_root / name
+            for name in sorted(files)
+            if name.endswith(".py") and not is_excluded(rel_root / name, exclude)
+        )
+    return sources
+
+
+def count_vulture_file_errors(stderr: str) -> int:
+    """Files vulture reported it could not parse or read; Python warnings do not count."""
+    return sum(1 for line in stderr.splitlines() if _VULTURE_FILE_ERROR.match(line))
+
+
+def run_vulture(repo: Path, exclude: list[str], min_confidence: int = 80) -> int | None:
+    """Findings at or above `min_confidence` from vulture; None (with a warning) if the run is broken.
+
+    vulture gets the explicit list of non-excluded *.py files in one run (so usage across
+    files resolves) instead of its own `--exclude`, which treats a plain name as a
+    substring. No such file means nothing to scan: 0, without running vulture.
+    Exit 0 (nothing found) and 3 (dead code found) are success, but vulture also exits 3
+    when it skipped files it could not parse or read, so any such file on stderr makes
+    the count partial and therefore None. Anything else, such as a missing binary or a
+    file list too long for the command line, is None too.
+    """
+    sources = python_sources(repo, exclude)
+    if not sources:
+        return 0
+    args = ["vulture", "--min-confidence", str(min_confidence), "--"]
+    args += [str(s) for s in sources]
+    result = run_tool(args, cwd=repo)
+    if result is None:
+        return None
+    if result.returncode not in (0, _VULTURE_FOUND_EXIT):
+        detail = (result.stderr.strip().splitlines() or ["no error output"])[0]
+        warn(f"vulture failed (exit {result.returncode}: {detail}); skipped")
+        return None
+    unparseable = count_vulture_file_errors(result.stderr)
+    if unparseable:
+        warn(f"vulture could not parse or read {unparseable} file(s); skipped")
+        return None
+    return sum(1 for line in result.stdout.splitlines() if line.strip())
+
+
+def run_deptry(project: Path) -> int | None:
+    """Count of DEP002 (unused dependency) issues deptry finds in `project`; None if the run is broken.
+
+    deptry exits 1 when it found issues but still writes its JSON report, so exit 1 with
+    a readable report is success; any other failure, or an unreadable report, is not.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        report = Path(tmp) / "deptry.json"
+        result = run_tool(["deptry", ".", "--json-output", str(report)], cwd=project)
+        if result is None:
+            return None
+        if result.returncode not in (0, _DEPTRY_FOUND_EXIT):
+            detail = (result.stderr.strip().splitlines() or ["no error output"])[0]
+            warn(
+                f"deptry failed in {project} (exit {result.returncode}: {detail}); skipped"
+            )
+            return None
+        try:
+            issues = json.loads(report.read_text())
+            return sum(
+                1 for i in issues if i["error"]["code"] == _DEPTRY_UNUSED_DEPENDENCY
+            )
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            warn(
+                f"deptry report for {project} is unusable ({type(exc).__name__}); skipped"
+            )
+            return None
+
+
+def find_python_projects(repo: Path, exclude: list[str]) -> list[Path]:
+    """Non-excluded directories, at most MAX_DEPTH deep, holding a Python manifest."""
+    projects: list[Path] = []
+    for root, dirs, files in os.walk(repo):
+        rel_root = Path(root).relative_to(repo)
+        dirs[:] = sorted(
+            d
+            for d in dirs
+            if len(rel_root.parts) < MAX_DEPTH
+            and not is_excluded(rel_root / d, exclude)
+        )
+        if any(
+            fnmatch(name, pattern) and not is_excluded(rel_root / name, exclude)
+            for name in files
+            for pattern in _PYTHON_MANIFESTS
+        ):
+            projects.append(Path(root))
+    return projects
+
+
+def scan_python(repo: Path, exclude: list[str]) -> dict[str, int] | None:
+    """Python dead-code signals (vulture symbols, deptry dependencies); None if any run is broken.
+
+    A repo with no non-excluded *.py file has 0 unused symbols, but that 0 only stands
+    if deptry ran on at least one project; with neither, nothing was measured: None.
+    """
+    projects = find_python_projects(repo, exclude)
+    if not projects and not python_sources(repo, exclude):
+        warn("python detected but no *.py file or python project to scan; skipped")
+        return None
+    symbols = run_vulture(repo, exclude)
+    if symbols is None:
+        return None
+    unused_dependencies = 0
+    for project in projects:
+        unused = run_deptry(project)
+        if unused is None:
+            return None
+        unused_dependencies += unused
+    return {"unused_symbols": symbols, "unused_dependencies": unused_dependencies}
+
+
+def parse_go_deadcode(path: Path) -> dict[str, int] | None:
+    """Dead-code counts from a `deadcode -json` fragment; None if absent or unusable.
+
+    The report is a list of packages, each with a `Funcs` list of unreachable functions
+    carrying a `Generated` flag. Generated functions are not the author's to fix, so
+    only the others count. A clean run prints `null`, which is a real zero; an empty
+    file means the tool never ran to completion, so it is None.
+    """
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text()
+    except OSError as exc:
+        warn(f"go fragment {path} could not be read ({type(exc).__name__}); skipped")
+        return None
+    if not text.strip():
+        warn(f"go fragment {path} is empty; skipped")
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        warn(f"go fragment {path} is not valid JSON ({type(exc).__name__}); skipped")
+        return None
+    if data is None:
+        return {"unused_symbols": 0}
+    if not isinstance(data, list):
+        warn(f"go fragment {path} is not a deadcode report; skipped")
+        return None
+    try:
+        unused = sum(
+            1
+            for package in data
+            for func in package.get("Funcs") or []
+            if not func["Generated"]
+        )
+    except (TypeError, AttributeError, KeyError):
+        warn(f"go fragment {path} is not a deadcode report; skipped")
+        return None
+    return {"unused_symbols": unused}
+
+
 def merge_dead_code(parts: list[dict[str, int] | None]) -> dict | None:
     """Sum per-kind counts across the *expected* parts; None if any is broken or none is expected.
 
-    Each entry is a part the repo should have produced: a count dict, or None when that
-    part was expected but is unusable (crashed knip, broken cargo-machete). A part the
-    repo does not have (no knip fragment, no Cargo.toml) is simply left out of the list.
-    A partial total would look like an improvement to the ratchet, so one broken part
-    makes the whole figure null.
+    Each entry is the part of one detected language: a count dict, or None when that
+    part is missing or unusable (no knip or Go fragment, crashed knip, broken
+    cargo-machete or vulture). A partial total would look like an improvement to the
+    ratchet, so one missing or broken part makes the whole figure null.
     """
     if not parts or any(p is None for p in parts):
         return None

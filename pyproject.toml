@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quality-report"
-version = "0.1.0"
+version = "0.2.0"
 description = "Measure duplication, dead code and cyclomatic complexity in CI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["pyyaml", "psycopg[binary]>=3.2", "requests>=2.32"]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "responses"]
+dev = ["pytest", "ruff", "responses", "vulture==2.16", "deptry==0.25.1"]
 
 [project.scripts]
 quality-report = "quality_report.cli:main"
@@ -31,3 +31,4 @@ markers = [
 
 [tool.ruff]
 target-version = "py311"
+extend-exclude = ["tests/fixtures"]

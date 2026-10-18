@@ -1,0 +1,28 @@
+[
+	{
+		"Name": "main",
+		"Path": "example.com/mini",
+		"Funcs": [
+			{
+				"Name": "unusedGenerated",
+				"Position": {
+					"File": "gen.go",
+					"Line": 5,
+					"Col": 6
+				},
+				"Generated": true,
+				"Marker": false
+			},
+			{
+				"Name": "unusedHandwritten",
+				"Position": {
+					"File": "main.go",
+					"Line": 9,
+					"Col": 6
+				},
+				"Generated": false,
+				"Marker": false
+			}
+		]
+	}
+]

@@ -3,7 +3,14 @@ from pathlib import Path
 
 from quality_report.ci import RunContext
 from quality_report.complexity import FunctionStat
-from quality_report.report import build_report, format_summary, run
+from quality_report.config import DEFAULT_EXCLUDES
+from quality_report.deadcode import GO_FRAGMENT
+from quality_report.report import (
+    _measure_dead_code,
+    build_report,
+    format_summary,
+    run,
+)
 
 FIX = Path(__file__).parent / "fixtures"
 CTX_ENV = {"QUALITY_REPO": "t", "QUALITY_COMMIT": "c", "QUALITY_BRANCH": "b"}
@@ -79,6 +86,9 @@ def test_run_embeds_ratchet_from_valid_baseline(tmp_path, monkeypatch):
         "functions_over_threshold": None,
     }
     repo = _repo_with_baseline(tmp_path, json.dumps(baseline))
+    (repo / "package.json").write_text(
+        "{}"
+    )  # a typescript repo, so the fragment counts
     (repo / ".quality").mkdir()
     (repo / ".quality" / "deadcode-ts.json").write_text(
         (FIX / "knip-sample.json").read_text()
@@ -181,12 +191,14 @@ def test_dead_code_null_when_knip_fragment_unusable_even_with_rust_ok(
     tmp_path, monkeypatch
 ):
     repo = _rust_repo(tmp_path, monkeypatch, machete=0)
+    (repo / "package.json").write_text("{}")
     _fragment(repo, "")
     assert run(repo, tmp_path / "r.json", env=CTX_ENV)["dead_code"] is None
 
 
 def test_dead_code_null_when_machete_broken_in_rust_repo(tmp_path, monkeypatch):
     repo = _rust_repo(tmp_path, monkeypatch, machete=None)
+    (repo / "package.json").write_text("{}")
     _fragment(repo, (FIX / "knip-sample.json").read_text())
     assert run(repo, tmp_path / "r.json", env=CTX_ENV)["dead_code"] is None
 
@@ -204,3 +216,73 @@ def test_dead_code_ignores_other_fragments(tmp_path, monkeypatch):
     (repo / ".quality" / "deadcode-py.json").write_text('{"vulture": []}')
     monkeypatch.setenv("PATH", "")
     assert run(repo, tmp_path / "r.json", env=CTX_ENV)["dead_code"] is None
+
+
+def _ts_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "ts"
+    repo.mkdir()
+    (repo / "package.json").write_text("{}")
+    return repo
+
+
+def test_dead_code_null_when_ts_fragment_missing(tmp_path, capsys):
+    repo = _ts_repo(tmp_path)
+    assert _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["typescript"]) is None
+    err = capsys.readouterr().err
+    assert "typescript detected but .quality/deadcode-ts.json is missing" in err
+
+
+def test_dead_code_null_with_warning_for_language_without_source(tmp_path, capsys):
+    assert _measure_dead_code(tmp_path, list(DEFAULT_EXCLUDES), ["cobol"]) is None
+    assert "cobol detected but has no dead-code source" in capsys.readouterr().err
+
+
+def test_dead_code_null_when_go_fragment_missing(tmp_path, capsys):
+    repo = _ts_repo(tmp_path)
+    _fragment(repo, (FIX / "knip-sample.json").read_text())
+    assert (
+        _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["go", "typescript"]) is None
+    )
+    assert "go detected but .quality/deadcode-go.json is missing" in (
+        capsys.readouterr().err
+    )
+
+
+def test_dead_code_null_when_go_fragment_unusable(tmp_path):
+    repo = _ts_repo(tmp_path)
+    (repo / ".quality").mkdir()
+    (repo / ".quality" / GO_FRAGMENT).write_text("{}")
+    assert _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["go"]) is None
+
+
+def test_dead_code_with_go_and_ts_fragments(tmp_path):
+    repo = _ts_repo(tmp_path)
+    _fragment(repo, (FIX / "knip-sample.json").read_text())
+    (repo / ".quality" / GO_FRAGMENT).write_text(
+        (FIX / "go-deadcode-sample.json").read_text()
+    )
+    ts_only = _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["typescript"])
+    both = _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["go", "typescript"])
+    assert both["total"] == ts_only["total"] + 1
+    assert both["by_kind"]["unused_symbols"] == ts_only["by_kind"]["unused_symbols"] + 1
+
+
+def test_dead_code_null_without_languages(tmp_path):
+    assert _measure_dead_code(tmp_path, list(DEFAULT_EXCLUDES), []) is None
+
+
+def test_dead_code_ts_and_rust_shapes_unchanged(tmp_path, monkeypatch):
+    repo = _rust_repo(tmp_path, monkeypatch, machete=2)
+    _fragment(repo, (FIX / "knip-sample.json").read_text())
+    d = _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["rust", "typescript"])
+    assert d is not None and d["by_kind"]["unused_dependencies"] >= 2
+
+
+def test_dead_code_python_counts_flow_into_by_kind(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "quality_report.report.scan_python",
+        lambda repo, exclude: {"unused_symbols": 3, "unused_dependencies": 1},
+    )
+    d = _measure_dead_code(tmp_path, list(DEFAULT_EXCLUDES), ["python"])
+    assert d is not None and d["total"] == 4
+    assert d["by_kind"]["unused_symbols"] == 3
