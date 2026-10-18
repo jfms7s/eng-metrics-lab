@@ -6,10 +6,14 @@ from quality_report.config import DEFAULT_EXCLUDES
 from quality_report.deadcode import (
     count_dead_code_allows,
     count_machete_crates,
+    find_python_projects,
     has_cargo_manifest,
     merge_dead_code,
     parse_knip,
     run_cargo_machete,
+    run_deptry,
+    run_vulture,
+    scan_python,
     scan_rust,
 )
 from quality_report.tools import run_tool
@@ -236,3 +240,69 @@ def test_machete_not_installed_is_none_with_warning(monkeypatch, capsys):
     _stub_machete(monkeypatch, 101, "", "cargo-machete: command not found")
     assert run_cargo_machete(Path(".")) is None
     assert "warning" in capsys.readouterr().err
+
+
+FIX = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.tools
+def test_scan_python_counts_vulture_and_deptry():
+    r = scan_python(FIX / "py-mini", list(DEFAULT_EXCLUDES))
+    assert r == {"unused_symbols": 2, "unused_dependencies": 1}
+
+
+@pytest.mark.tools
+def test_scan_python_finds_nested_project():
+    nested = FIX / "py-nested"
+    assert find_python_projects(nested, list(DEFAULT_EXCLUDES)) == [nested / "backend"]
+    assert scan_python(nested, list(DEFAULT_EXCLUDES)) is not None
+
+
+@pytest.mark.tools
+def test_run_vulture_honours_exclude():
+    assert run_vulture(FIX / "py-mini", ["src"]) == 0
+
+
+def test_find_python_projects_skips_excluded_and_deep_dirs(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "a" / "b" / "c" / "d").mkdir(parents=True)
+    (tmp_path / "a" / "requirements-dev.txt").write_text("")
+    (tmp_path / "a" / "b" / "c" / "d" / "setup.py").write_text("")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "pyproject.toml").write_text("")
+    assert find_python_projects(tmp_path, ["node_modules"]) == [
+        tmp_path,
+        tmp_path / "a",
+    ]
+
+
+def test_scan_python_none_when_vulture_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr("quality_report.deadcode.run_vulture", lambda *a, **k: None)
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+    assert scan_python(tmp_path, list(DEFAULT_EXCLUDES)) is None
+
+
+def test_scan_python_none_when_deptry_broken(monkeypatch, tmp_path):
+    monkeypatch.setattr("quality_report.deadcode.run_vulture", lambda *a, **k: 0)
+    monkeypatch.setattr("quality_report.deadcode.run_deptry", lambda *a, **k: None)
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+    assert scan_python(tmp_path, list(DEFAULT_EXCLUDES)) is None
+
+
+def test_scan_python_sums_deptry_over_projects(monkeypatch, tmp_path):
+    monkeypatch.setattr("quality_report.deadcode.run_vulture", lambda *a, **k: 3)
+    monkeypatch.setattr("quality_report.deadcode.run_deptry", lambda *a, **k: 2)
+    for d in ("a", "b"):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "pyproject.toml").write_text("")
+    assert scan_python(tmp_path, []) == {"unused_symbols": 3, "unused_dependencies": 4}
+
+
+def test_run_deptry_none_when_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", "")
+    assert run_deptry(tmp_path) is None
+
+
+def test_run_vulture_none_when_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", "")
+    assert run_vulture(tmp_path, []) is None

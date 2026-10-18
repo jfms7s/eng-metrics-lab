@@ -1,0 +1,4 @@
+[project]
+name = "py-nested-backend"
+version = "0.0.0"
+dependencies = ["requests"]

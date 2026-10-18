@@ -1,0 +1,4 @@
+[project]
+name = "py-mini"
+version = "0.0.0"
+dependencies = ["requests", "rich"]

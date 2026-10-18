@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
+from fnmatch import fnmatch
 from pathlib import Path
 
-from quality_report.detect import is_excluded
+from quality_report.detect import MAX_DEPTH, is_excluded
 from quality_report.tools import run_tool, warn
 
 KINDS = (
@@ -32,6 +34,11 @@ _KNIP_MEMBER_FIELDS = ("enumMembers", "classMembers")
 _DEAD_CODE_ALLOW = re.compile(
     r"#!?\[\s*(?:allow|expect)\s*\([^\]]*\bdead_code\b[^\]]*\)\s*\]"
 )
+GO_FRAGMENT = "deadcode-go.json"
+_PYTHON_MANIFESTS = ("pyproject.toml", "setup.py", "requirements*.txt")
+_VULTURE_FOUND_EXIT = 3
+_DEPTRY_FOUND_EXIT = 1
+_DEPTRY_UNUSED_DEPENDENCY = "DEP002"
 _MACHETE_CRATE = re.compile(r"^\t\S+$")
 
 
@@ -149,6 +156,98 @@ def scan_rust(repo: Path, exclude: list[str]) -> dict[str, int] | None:
         "suppressed": count_dead_code_allows(repo, exclude),
         "unused_dependencies": unused,
     }
+
+
+def run_vulture(repo: Path, exclude: list[str], min_confidence: int = 80) -> int | None:
+    """Findings at or above `min_confidence` from vulture; None (with a warning) if the run is broken.
+
+    Exit 0 (nothing found) and 3 (dead code found) are success; anything else, such as
+    a file that does not parse or a missing binary, makes the count unreliable.
+    """
+    args = ["vulture", ".", "--min-confidence", str(min_confidence)]
+    if exclude:
+        args += ["--exclude", ",".join(exclude)]
+    result = run_tool(args, cwd=repo)
+    if result is None:
+        return None
+    if result.returncode not in (0, _VULTURE_FOUND_EXIT):
+        detail = (result.stderr.strip().splitlines() or ["no error output"])[0]
+        warn(f"vulture failed (exit {result.returncode}: {detail}); skipped")
+        return None
+    return sum(1 for line in result.stdout.splitlines() if line.strip())
+
+
+def run_deptry(project: Path) -> int | None:
+    """Count of DEP002 (unused dependency) issues deptry finds in `project`; None if the run is broken.
+
+    deptry exits 1 when it found issues but still writes its JSON report, so exit 1 with
+    a readable report is success; any other failure, or an unreadable report, is not.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        report = Path(tmp) / "deptry.json"
+        result = run_tool(["deptry", ".", "--json-output", str(report)], cwd=project)
+        if result is None:
+            return None
+        if result.returncode not in (0, _DEPTRY_FOUND_EXIT):
+            detail = (result.stderr.strip().splitlines() or ["no error output"])[0]
+            warn(
+                f"deptry failed in {project} (exit {result.returncode}: {detail}); skipped"
+            )
+            return None
+        try:
+            issues = json.loads(report.read_text())
+            return sum(
+                1 for i in issues if i["error"]["code"] == _DEPTRY_UNUSED_DEPENDENCY
+            )
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            warn(
+                f"deptry report for {project} is unusable ({type(exc).__name__}); skipped"
+            )
+            return None
+
+
+def find_python_projects(repo: Path, exclude: list[str]) -> list[Path]:
+    """Non-excluded directories, at most MAX_DEPTH deep, holding a Python manifest."""
+    projects: list[Path] = []
+    for root, dirs, files in os.walk(repo):
+        rel_root = Path(root).relative_to(repo)
+        dirs[:] = sorted(
+            d
+            for d in dirs
+            if len(rel_root.parts) < MAX_DEPTH
+            and not is_excluded(rel_root / d, exclude)
+        )
+        if any(
+            fnmatch(name, pattern) and not is_excluded(rel_root / name, exclude)
+            for name in files
+            for pattern in _PYTHON_MANIFESTS
+        ):
+            projects.append(Path(root))
+    return projects
+
+
+def scan_python(repo: Path, exclude: list[str]) -> dict[str, int] | None:
+    """Python dead-code signals (vulture symbols, deptry dependencies); None if any run is broken."""
+    symbols = run_vulture(repo, exclude)
+    if symbols is None:
+        return None
+    unused_dependencies = 0
+    for project in find_python_projects(repo, exclude):
+        unused = run_deptry(project)
+        if unused is None:
+            return None
+        unused_dependencies += unused
+    return {"unused_symbols": symbols, "unused_dependencies": unused_dependencies}
+
+
+def parse_go_fragment(path: Path) -> dict[str, int] | None:
+    """Dead-code counts from the Go fragment; None if absent or unusable.
+
+    Placeholder until the real parser lands: an existing fragment is not yet understood.
+    """
+    if path.exists():
+        warn(f"go fragment {path} cannot be parsed yet; skipped")
+    return None
 
 
 def merge_dead_code(parts: list[dict[str, int] | None]) -> dict | None:

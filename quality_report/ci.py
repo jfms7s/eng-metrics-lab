@@ -14,6 +14,8 @@ _TOOL_VERSION_COMMANDS: dict[str, list[str]] = {
     "jscpd": ["jscpd", "--version"],
     "lizard": ["lizard", "--version"],
     "cargo-machete": ["cargo-machete", "--version"],
+    "vulture": ["vulture", "--version"],
+    "deptry": ["deptry", "--version"],
 }
 
 

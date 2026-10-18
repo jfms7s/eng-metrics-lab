@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = ["pyyaml", "psycopg[binary]>=3.2", "requests>=2.32"]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "responses"]
+dev = ["pytest", "ruff", "responses", "vulture==2.16", "deptry==0.25.1"]
 
 [project.scripts]
 quality-report = "quality_report.cli:main"
@@ -31,3 +31,4 @@ markers = [
 
 [tool.ruff]
 target-version = "py311"
+extend-exclude = ["tests/fixtures"]

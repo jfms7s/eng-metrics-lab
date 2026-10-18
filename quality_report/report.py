@@ -20,9 +20,11 @@ from quality_report.complexity import (
 )
 from quality_report.config import load_config
 from quality_report.deadcode import (
-    has_cargo_manifest,
+    GO_FRAGMENT,
     merge_dead_code,
+    parse_go_fragment,
     parse_knip,
+    scan_python,
     scan_rust,
 )
 from quality_report.detect import detect_languages
@@ -107,15 +109,22 @@ def _measure_duplication(
     return None if report_path is None else parse_jscpd_report(report_path, min_tokens)
 
 
-def _measure_dead_code(repo: Path, exclude: list[str]) -> dict | None:
-    # Only parts the repo is expected to have: a missing knip fragment or a repo without
-    # Cargo.toml contributes nothing, while a present-but-unusable one (None) nulls the total.
-    parts: list[dict[str, int] | None] = []
-    knip_fragment = repo / FRAGMENT_DIR / KNIP_FRAGMENT
-    if knip_fragment.exists():
-        parts.append(parse_knip(knip_fragment))
-    if has_cargo_manifest(repo, exclude):
-        parts.append(scan_rust(repo, exclude))
+def _measure_dead_code(
+    repo: Path, exclude: list[str], languages: list[str]
+) -> dict | None:
+    """Merged dead code over every detected language; None if any has no usable source.
+
+    A language whose source is missing or broken (a knip or Go fragment that was not
+    produced, a crashed scanner) makes the total null, as does a repo with no languages.
+    """
+    fragments = repo / FRAGMENT_DIR
+    sources = {
+        "typescript": lambda: parse_knip(fragments / KNIP_FRAGMENT),
+        "rust": lambda: scan_rust(repo, exclude),
+        "python": lambda: scan_python(repo, exclude),
+        "go": lambda: parse_go_fragment(fragments / GO_FRAGMENT),
+    }
+    parts = [sources[lang]() if lang in sources else None for lang in languages]
     return merge_dead_code(parts)
 
 
@@ -152,7 +161,7 @@ def _run(
             languages,
             config.duplication_formats,
         ),
-        _measure_dead_code(repo, config.exclude),
+        _measure_dead_code(repo, config.exclude, languages),
         summarize_complexity(functions, config.complexity_threshold),
         _SKIPPED_RATCHET,
     )
