@@ -238,11 +238,23 @@ def test_dead_code_null_when_go_fragment_missing(tmp_path):
     )
 
 
-def test_dead_code_null_when_go_fragment_not_yet_parseable(tmp_path):
+def test_dead_code_null_when_go_fragment_unusable(tmp_path):
     repo = _ts_repo(tmp_path)
     (repo / ".quality").mkdir()
     (repo / ".quality" / GO_FRAGMENT).write_text("{}")
     assert _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["go"]) is None
+
+
+def test_dead_code_with_go_and_ts_fragments(tmp_path):
+    repo = _ts_repo(tmp_path)
+    _fragment(repo, (FIX / "knip-sample.json").read_text())
+    (repo / ".quality" / GO_FRAGMENT).write_text(
+        (FIX / "go-deadcode-sample.json").read_text()
+    )
+    ts_only = _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["typescript"])
+    both = _measure_dead_code(repo, list(DEFAULT_EXCLUDES), ["go", "typescript"])
+    assert both["total"] == ts_only["total"] + 1
+    assert both["by_kind"]["unused_symbols"] == ts_only["by_kind"]["unused_symbols"] + 1
 
 
 def test_dead_code_null_without_languages(tmp_path):

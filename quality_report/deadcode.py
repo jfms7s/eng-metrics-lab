@@ -240,14 +240,45 @@ def scan_python(repo: Path, exclude: list[str]) -> dict[str, int] | None:
     return {"unused_symbols": symbols, "unused_dependencies": unused_dependencies}
 
 
-def parse_go_fragment(path: Path) -> dict[str, int] | None:
-    """Dead-code counts from the Go fragment; None if absent or unusable.
+def parse_go_deadcode(path: Path) -> dict[str, int] | None:
+    """Dead-code counts from a `deadcode -json` fragment; None if absent or unusable.
 
-    Placeholder until the real parser lands: an existing fragment is not yet understood.
+    The report is a list of packages, each with a `Funcs` list of unreachable functions
+    carrying a `Generated` flag. Generated functions are not the author's to fix, so
+    only the others count. A clean run prints `null`, which is a real zero; an empty
+    file means the tool never ran to completion, so it is None.
     """
-    if path.exists():
-        warn(f"go fragment {path} cannot be parsed yet; skipped")
-    return None
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text()
+    except OSError as exc:
+        warn(f"go fragment {path} could not be read ({type(exc).__name__}); skipped")
+        return None
+    if not text.strip():
+        warn(f"go fragment {path} is empty; skipped")
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        warn(f"go fragment {path} is not valid JSON ({type(exc).__name__}); skipped")
+        return None
+    if data is None:
+        return {"unused_symbols": 0}
+    if not isinstance(data, list):
+        warn(f"go fragment {path} is not a deadcode report; skipped")
+        return None
+    try:
+        unused = sum(
+            1
+            for package in data
+            for func in package.get("Funcs") or []
+            if not func["Generated"]
+        )
+    except (TypeError, AttributeError, KeyError):
+        warn(f"go fragment {path} is not a deadcode report; skipped")
+        return None
+    return {"unused_symbols": unused}
 
 
 def merge_dead_code(parts: list[dict[str, int] | None]) -> dict | None:

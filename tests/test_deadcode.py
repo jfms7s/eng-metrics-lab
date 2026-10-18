@@ -9,6 +9,7 @@ from quality_report.deadcode import (
     find_python_projects,
     has_cargo_manifest,
     merge_dead_code,
+    parse_go_deadcode,
     parse_knip,
     run_cargo_machete,
     run_deptry,
@@ -306,3 +307,26 @@ def test_run_deptry_none_when_missing(monkeypatch, tmp_path):
 def test_run_vulture_none_when_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("PATH", "")
     assert run_vulture(tmp_path, []) is None
+
+
+def test_parse_go_deadcode_counts_non_generated():
+    assert parse_go_deadcode(FIX / "go-deadcode-sample.json") == {"unused_symbols": 1}
+
+
+def test_parse_go_deadcode_clean_run_is_zero(tmp_path):
+    path = tmp_path / "deadcode-go.json"
+    path.write_text("null")
+    assert parse_go_deadcode(path) == {"unused_symbols": 0}
+
+
+def test_parse_go_deadcode_missing_is_none(tmp_path):
+    assert parse_go_deadcode(tmp_path / "absent.json") is None
+
+
+@pytest.mark.parametrize(
+    "content", ["", "  \n", "not json", "{}", '[{"Funcs": [{}]}]', "[1]"]
+)
+def test_parse_go_deadcode_unusable_is_none(tmp_path, content):
+    path = tmp_path / "deadcode-go.json"
+    path.write_text(content)
+    assert parse_go_deadcode(path) is None

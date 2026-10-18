@@ -22,7 +22,7 @@ from quality_report.config import load_config
 from quality_report.deadcode import (
     GO_FRAGMENT,
     merge_dead_code,
-    parse_go_fragment,
+    parse_go_deadcode,
     parse_knip,
     scan_python,
     scan_rust,
@@ -122,7 +122,7 @@ def _measure_dead_code(
         "typescript": lambda: parse_knip(fragments / KNIP_FRAGMENT),
         "rust": lambda: scan_rust(repo, exclude),
         "python": lambda: scan_python(repo, exclude),
-        "go": lambda: parse_go_fragment(fragments / GO_FRAGMENT),
+        "go": lambda: parse_go_deadcode(fragments / GO_FRAGMENT),
     }
     parts = [sources[lang]() if lang in sources else None for lang in languages]
     return merge_dead_code(parts)
