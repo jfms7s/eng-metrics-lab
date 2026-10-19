@@ -78,6 +78,14 @@
     "untested_languages": [],
     "unmatched_files": 0
   },
+  "test_gap": {
+    "metric": "crap",
+    "threshold": 30,
+    "functions_over_threshold": 12,
+    "max": 210.5,
+    "functions_scored": 940,
+    "functions_without_data": 35
+  },
   "ratchet": {
     "result": "pass",
     "baseline_commit": "0123abc",

@@ -49,9 +49,10 @@ def test_build_report_shape():
         "complexity",
         "cognitive",
         "coverage",
+        "test_gap",
         "ratchet",
     ]
-    assert r["coverage"] is None
+    assert r["coverage"] is None and r["test_gap"] is None
 
 
 def test_run_with_missing_jscpd_sets_duplication_null(tmp_path, monkeypatch):

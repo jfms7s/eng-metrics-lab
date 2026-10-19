@@ -22,10 +22,20 @@ def test_sample_fixture_matches_real_report_shape():
     )
     from quality_report.coverage import CoverageData, FileCoverage, summarize_coverage
     from quality_report.report import build_report
+    from quality_report.testgap import score_functions, summarize_test_gap
 
     sample = json.loads(SAMPLE.read_text())
-    fns = [FunctionStat(name="f", file="a.py", ccn=11, nloc=3, cognitive=4)]
+    fns = [
+        FunctionStat(name="f", file="a.py", ccn=11, nloc=3, start=1, end=2, cognitive=4)
+    ]
     ctx = RunContext(repo="r", commit="c", branch="b", ci_system="github", run="1")
+    cov = CoverageData(
+        files={"a.py": FileCoverage(lines={1: 1}, branches={"1,0,0": 1})},
+        languages=["python"],
+        untested_languages=[],
+        branch_languages=["python"],
+        unmatched_files=0,
+    )
     real = build_report(
         ctx,
         ["python"],
@@ -36,15 +46,8 @@ def test_sample_fixture_matches_real_report_shape():
         summarize_complexity(fns, 10),
         {"result": "pass", "baseline_commit": None, "violations": []},
         cognitive=summarize_cognitive(fns, 15),
-        coverage=summarize_coverage(
-            CoverageData(
-                files={"a.py": FileCoverage(lines={1: 1}, branches={"1,0,0": 1})},
-                languages=["python"],
-                untested_languages=[],
-                branch_languages=["python"],
-                unmatched_files=0,
-            )
-        ),
+        coverage=summarize_coverage(cov),
+        test_gap=summarize_test_gap(*score_functions(fns, cov)),
     )
     assert set(sample) == set(real)
     for section in (
@@ -55,6 +58,7 @@ def test_sample_fixture_matches_real_report_shape():
         "complexity",
         "cognitive",
         "coverage",
+        "test_gap",
         "ratchet",
     ):
         assert set(sample[section]) == set(real[section]), section

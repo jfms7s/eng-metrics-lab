@@ -20,7 +20,12 @@ from quality_report.complexity import (
     summarize_size,
 )
 from quality_report.config import load_config
-from quality_report.coverage import FRAGMENT_DIR, load_coverage, summarize_coverage
+from quality_report.coverage import (
+    FRAGMENT_DIR,
+    CoverageData,
+    load_coverage,
+    summarize_coverage,
+)
 from quality_report.deadcode import (
     GO_FRAGMENT,
     merge_dead_code,
@@ -35,6 +40,7 @@ from quality_report.duplication import (
     parse_jscpd_report,
     run_jscpd,
 )
+from quality_report.testgap import score_functions, summarize_test_gap
 from quality_report.tools import warn
 
 SCHEMA_VERSION = 1
@@ -57,6 +63,7 @@ def build_report(
     *,
     cognitive: dict | None = None,
     coverage: dict | None = None,
+    test_gap: dict | None = None,
 ) -> dict:
     return {
         "schema": SCHEMA_VERSION,
@@ -73,6 +80,7 @@ def build_report(
         "complexity": complexity,
         "cognitive": cognitive,
         "coverage": coverage,
+        "test_gap": test_gap,
         "ratchet": ratchet_result,
     }
 
@@ -104,6 +112,14 @@ def _measure_cognitive(functions: list[FunctionStat], threshold: int) -> dict | 
             "lizard gave no cognitive complexity (CogC column missing); cognitive null"
         )
     return summary
+
+
+def _measure_test_gap(
+    functions: list[FunctionStat], coverage: CoverageData | None
+) -> dict | None:
+    if coverage is None:
+        return None
+    return summarize_test_gap(*score_functions(functions, coverage))
 
 
 def _measure_duplication(
@@ -197,6 +213,7 @@ def _run(
         _SKIPPED_RATCHET,
         cognitive=_measure_cognitive(functions, config.cognitive_threshold),
         coverage=summarize_coverage(coverage),
+        test_gap=_measure_test_gap(functions, coverage),
     )
     baseline = _load_baseline(repo)
     if baseline is not None:
