@@ -35,3 +35,9 @@ def test_duplication_formats_must_be_list_of_strings(tmp_path, value):
     (tmp_path / ".quality.yml").write_text(f"duplication_formats: {value}\n")
     with pytest.raises(TypeError, match="duplication_formats"):
         load_config(tmp_path)
+
+
+def test_config_cognitive_threshold(tmp_path):
+    assert load_config(tmp_path).cognitive_threshold == 15
+    (tmp_path / ".quality.yml").write_text("cognitive_threshold: 20\n")
+    assert load_config(tmp_path).cognitive_threshold == 20

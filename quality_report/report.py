@@ -15,10 +15,17 @@ from quality_report.complexity import (
     FunctionStat,
     parse_lizard_csv,
     run_lizard,
+    summarize_cognitive,
     summarize_complexity,
     summarize_size,
 )
-from quality_report.config import load_config
+from quality_report.config import Config, load_config
+from quality_report.coverage import (
+    FRAGMENT_DIR,
+    CoverageData,
+    load_coverage,
+    summarize_coverage,
+)
 from quality_report.deadcode import (
     GO_FRAGMENT,
     merge_dead_code,
@@ -27,17 +34,19 @@ from quality_report.deadcode import (
     scan_python,
     scan_rust,
 )
+from quality_report.details import build_details
 from quality_report.detect import detect_languages
 from quality_report.duplication import (
     duplication_formats,
+    parse_jscpd_clones,
     parse_jscpd_report,
     run_jscpd,
 )
+from quality_report.testgap import score_functions, summarize_test_gap
 from quality_report.tools import warn
 
 SCHEMA_VERSION = 1
 BASELINE_FILENAME = ".quality-baseline.json"
-FRAGMENT_DIR = ".quality"
 KNIP_FRAGMENT = "deadcode-ts.json"
 MAX_OFFENDERS_PRINTED = 10
 
@@ -53,6 +62,10 @@ def build_report(
     dead_code: dict | None,
     complexity: dict | None,
     ratchet_result: dict,
+    *,
+    cognitive: dict | None = None,
+    coverage: dict | None = None,
+    test_gap: dict | None = None,
 ) -> dict:
     return {
         "schema": SCHEMA_VERSION,
@@ -67,6 +80,9 @@ def build_report(
         "duplication": duplication,
         "dead_code": dead_code,
         "complexity": complexity,
+        "cognitive": cognitive,
+        "coverage": coverage,
+        "test_gap": test_gap,
         "ratchet": ratchet_result,
     }
 
@@ -91,6 +107,30 @@ def _measure_complexity(repo: Path, exclude: list[str]) -> list[FunctionStat]:
     return [] if csv_text is None else parse_lizard_csv(csv_text, repo)
 
 
+def _measure_cognitive(functions: list[FunctionStat], threshold: int) -> dict | None:
+    summary = summarize_cognitive(functions, threshold)
+    if summary is None and functions:
+        warn(
+            "lizard gave no cognitive complexity (CogC column missing); cognitive null"
+        )
+    return summary
+
+
+def _measure_test_gap(
+    functions: list[FunctionStat], coverage: CoverageData | None
+) -> dict | None:
+    if coverage is None:
+        return None
+    scored, without_data = score_functions(functions, coverage)
+    summary = summarize_test_gap(scored, without_data)
+    if summary is None and functions:
+        warn(
+            f"{without_data} functions have no coverage data and none could be "
+            "scored; test_gap null"
+        )
+    return summary
+
+
 def _measure_duplication(
     repo: Path,
     exclude: list[str],
@@ -98,15 +138,18 @@ def _measure_duplication(
     out_dir: Path,
     languages: list[str],
     formats_override: list[str] | None,
-) -> dict | None:
+) -> tuple[dict | None, Path | None]:
+    """The duplication summary and the jscpd report path of *this* run (None if it did not run)."""
     formats = duplication_formats(languages, formats_override)
     if not formats:
         warn(
             "no code languages detected and no duplication_formats set; duplication skipped"
         )
-        return None
+        return None, None
     report_path = run_jscpd(repo, exclude, min_tokens, out_dir, formats)
-    return None if report_path is None else parse_jscpd_report(report_path, min_tokens)
+    if report_path is None:
+        return None, None
+    return parse_jscpd_report(report_path, min_tokens), report_path
 
 
 def _measure_dead_code(
@@ -159,24 +202,31 @@ def _run(
     ctx = resolve_context(env, repo)
     functions = _measure_complexity(repo, config.exclude)
     languages = detect_languages(repo, config.exclude)
+    coverage = load_coverage(
+        repo, languages, config.coverage_languages, config.exclude, env
+    )
 
+    # jscpd's output goes beside the report, never inside the analysed repo.
+    duplication, jscpd_report = _measure_duplication(
+        repo,
+        config.exclude,
+        config.duplication_min_tokens,
+        out.parent / "jscpd",
+        languages,
+        config.duplication_formats,
+    )
     report = build_report(
         ctx,
         languages,
         tool_versions(),
         summarize_size(functions),
-        # jscpd's output goes beside the report, never inside the analysed repo.
-        _measure_duplication(
-            repo,
-            config.exclude,
-            config.duplication_min_tokens,
-            out.parent / "jscpd",
-            languages,
-            config.duplication_formats,
-        ),
+        duplication,
         _measure_dead_code(repo, config.exclude, languages),
         summarize_complexity(functions, config.complexity_threshold),
         _SKIPPED_RATCHET,
+        cognitive=_measure_cognitive(functions, config.cognitive_threshold),
+        coverage=summarize_coverage(coverage),
+        test_gap=_measure_test_gap(functions, coverage),
     )
     baseline = _load_baseline(repo)
     if baseline is not None:
@@ -184,7 +234,29 @@ def _run(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n")
+    _write_details(repo, out, config, functions, coverage, jscpd_report, report)
     return report, functions
+
+
+def _write_details(
+    repo: Path,
+    out: Path,
+    config: Config,
+    functions: list[FunctionStat],
+    coverage: CoverageData | None,
+    jscpd_report: Path | None,
+    report: dict,
+) -> None:
+    scored = [] if coverage is None else score_functions(functions, coverage)[0]
+    clones = [] if jscpd_report is None else parse_jscpd_clones(jscpd_report, repo)
+    details = build_details(
+        functions,
+        config.complexity_threshold,
+        None if report["cognitive"] is None else config.cognitive_threshold,
+        scored,
+        clones,
+    )
+    (out.parent / "details.json").write_text(json.dumps(details, indent=2) + "\n")
 
 
 def _fmt(value: object, suffix: str = "") -> str:
@@ -194,12 +266,14 @@ def _fmt(value: object, suffix: str = "") -> str:
 def format_summary(report: dict, functions: list[FunctionStat]) -> list[str]:
     """One summary line, then the worst functions over the threshold (highest CCN first)."""
     dup, dead, cx = report["duplication"], report["dead_code"], report["complexity"]
+    cog = report.get("cognitive")
     summary = (
         "quality: "
         f"duplication {_fmt(dup and dup['percent'], '%')}, "
         f"dead code {_fmt(dead and dead['total'])}, "
         f"functions over threshold {_fmt(cx and cx['functions_over_threshold'])}, "
         f"max CCN {_fmt(cx and cx['max'])}, "
+        f"functions over cognitive {_fmt(cog and cog['functions_over_threshold'])}, "
         f"ratchet {report['ratchet']['result']}"
     )
     lines = [summary]

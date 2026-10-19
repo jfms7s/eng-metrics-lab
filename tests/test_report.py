@@ -47,8 +47,12 @@ def test_build_report_shape():
         "duplication",
         "dead_code",
         "complexity",
+        "cognitive",
+        "coverage",
+        "test_gap",
         "ratchet",
     ]
+    assert r["coverage"] is None and r["test_gap"] is None
 
 
 def test_run_with_missing_jscpd_sets_duplication_null(tmp_path, monkeypatch):
@@ -120,12 +124,13 @@ def test_format_summary_lists_offenders_highest_first_capped_at_ten():
         "duplication": {"percent": 1.5},
         "dead_code": {"total": 4},
         "complexity": {"threshold": 10, "functions_over_threshold": 12, "max": 22},
+        "cognitive": {"functions_over_threshold": 3},
         "ratchet": {"result": "pass"},
     }
     lines = format_summary(report, fns)
     assert (
         lines[0]
-        == "quality: duplication 1.5%, dead code 4, functions over threshold 12, max CCN 22, ratchet pass"
+        == "quality: duplication 1.5%, dead code 4, functions over threshold 12, max CCN 22, functions over cognitive 3, ratchet pass"
     )
     assert len(lines) == 11
     assert lines[1] == "  f11.ts:fn11 22"
@@ -137,10 +142,11 @@ def test_format_summary_null_metrics_are_na():
         "duplication": None,
         "dead_code": None,
         "complexity": None,
+        "cognitive": None,
         "ratchet": SKIPPED,
     }
     assert format_summary(report, []) == [
-        "quality: duplication n/a, dead code n/a, functions over threshold n/a, max CCN n/a, ratchet skipped"
+        "quality: duplication n/a, dead code n/a, functions over threshold n/a, max CCN n/a, functions over cognitive n/a, ratchet skipped"
     ]
 
 
@@ -286,3 +292,48 @@ def test_dead_code_python_counts_flow_into_by_kind(tmp_path, monkeypatch):
     d = _measure_dead_code(tmp_path, list(DEFAULT_EXCLUDES), ["python"])
     assert d is not None and d["total"] == 4
     assert d["by_kind"]["unused_symbols"] == 3
+
+
+def test_measure_cognitive_warns_when_cogc_missing(capsys):
+    from quality_report.report import _measure_cognitive
+
+    assert _measure_cognitive([FunctionStat("a.ts", "f", 1, 2)], 15) is None
+    assert "quality-report: warning:" in capsys.readouterr().err
+    assert _measure_cognitive([], 15) is None
+    assert capsys.readouterr().err == ""
+
+
+def test_run_reports_coverage_from_fragment(tmp_path, monkeypatch):
+    repo = _ts_repo(tmp_path)
+    (repo / "src").mkdir()
+    (repo / "src" / "a.ts").write_text("export const a = 1;\n")
+    (repo / ".quality").mkdir()
+    (repo / ".quality" / "coverage-ts.lcov").write_text(
+        f"SF:{repo}/src/a.ts\nDA:1,1\nDA:2,0\nend_of_record\n"
+    )
+    monkeypatch.setenv("PATH", "")
+    cov = run(repo, tmp_path / "r.json", env=CTX_ENV)["coverage"]
+    assert cov["lines_percent"] == 50.0 and cov["languages"] == ["typescript"]
+
+
+def test_run_coverage_honours_config_and_host_workspace(tmp_path, monkeypatch):
+    repo = _ts_repo(tmp_path)
+    (repo / "Cargo.toml").write_text("")
+    (repo / ".quality.yml").write_text("coverage_languages: [typescript]\n")
+    (repo / "a.ts").write_text("export const a = 1;\n")
+    (repo / ".quality").mkdir()
+    (repo / ".quality" / "coverage-ts.lcov").write_text(
+        "SF:/home/runner/work/r/r/a.ts\nDA:1,1\nend_of_record\n"
+    )
+    monkeypatch.setenv("PATH", "")
+    env = {**CTX_ENV, "QUALITY_HOST_WORKSPACE": "/home/runner/work/r/r"}
+    cov = run(repo, tmp_path / "r.json", env=env)["coverage"]
+    assert cov["lines_percent"] == 100.0
+    assert cov["untested_languages"] == ["rust"]
+
+
+def test_run_coverage_null_without_fragment(tmp_path, monkeypatch, capsys):
+    repo = _ts_repo(tmp_path)
+    monkeypatch.setenv("PATH", "")
+    assert run(repo, tmp_path / "r.json", env=CTX_ENV)["coverage"] is None
+    assert "coverage-ts*.lcov" in capsys.readouterr().err

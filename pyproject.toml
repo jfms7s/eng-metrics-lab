@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quality-report"
-version = "0.2.0"
-description = "Measure duplication, dead code and cyclomatic complexity in CI"
+version = "0.3.0"
+description = "Measure duplication, dead code, cyclomatic and cognitive complexity, test coverage and test gaps in CI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["pyyaml", "psycopg[binary]>=3.2", "requests>=2.32"]

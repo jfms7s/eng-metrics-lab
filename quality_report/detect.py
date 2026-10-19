@@ -16,6 +16,21 @@ _MANIFESTS: tuple[tuple[str, str], ...] = (
     ("go.mod", "go"),
 )
 
+LANGUAGES: tuple[str, ...] = tuple(sorted({language for _, language in _MANIFESTS}))
+"""Every language name `detect_languages` can return."""
+
+_EXTENSIONS: dict[str, str] = {
+    **dict.fromkeys((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"), "typescript"),
+    ".rs": "rust",
+    ".py": "python",
+    ".go": "go",
+}
+
+
+def language_of(path: str) -> str | None:
+    """The language a source file belongs to, by extension; None if unknown."""
+    return _EXTENSIONS.get(Path(path).suffix)
+
 
 def is_excluded(rel: Path, exclude: list[str]) -> bool:
     """True if a repo-relative path matches an exclude pattern.

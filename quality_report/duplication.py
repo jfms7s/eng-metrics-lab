@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from quality_report.complexity import _relative
 from quality_report.tools import run_tool, warn
 
 REPORT_NAME = "jscpd-report.json"
@@ -96,3 +97,29 @@ def parse_jscpd_report(path: Path, min_tokens: int) -> dict | None:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         warn(f"jscpd report {path} unreadable ({exc!r}); duplication skipped")
         return None
+
+
+def parse_jscpd_clones(path: Path, repo: Path | None = None) -> list[dict]:
+    """Every clone pair of a jscpd JSON report as `{"a": {...}, "b": {...}}`; [] if unusable.
+
+    Unreadable reports are not warned about again: `parse_jscpd_report` already does.
+    """
+    try:
+        duplicates = json.loads(path.read_text())["duplicates"]
+        return [
+            {
+                "a": _clone_side(clone["firstFile"], repo),
+                "b": _clone_side(clone["secondFile"], repo),
+            }
+            for clone in duplicates
+        ]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def _clone_side(side: dict, repo: Path | None) -> dict:
+    return {
+        "file": _relative(side["name"], repo),
+        "start": int(side["start"]),
+        "end": int(side["end"]),
+    }

@@ -50,6 +50,42 @@
     "p95": 12,
     "avg": 3.1
   },
+  "cognitive": {
+    "metric": "cognitive",
+    "threshold": 15,
+    "functions_over_threshold": 21,
+    "over": {
+      "10": 48,
+      "15": 21,
+      "25": 6
+    },
+    "max": 61,
+    "p95": 14,
+    "avg": 3.9
+  },
+  "coverage": {
+    "lines_percent": 71.3,
+    "lines_covered": 8120,
+    "lines_total": 11388,
+    "branches_percent": 55.0,
+    "branch_languages": [
+      "typescript"
+    ],
+    "languages": [
+      "typescript",
+      "rust"
+    ],
+    "untested_languages": [],
+    "unmatched_files": 0
+  },
+  "test_gap": {
+    "metric": "crap",
+    "threshold": 30,
+    "functions_over_threshold": 12,
+    "max": 210.5,
+    "functions_scored": 940,
+    "functions_without_data": 35
+  },
   "ratchet": {
     "result": "pass",
     "baseline_commit": "0123abc",

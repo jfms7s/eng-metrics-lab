@@ -1,0 +1,5 @@
+mode: atomic
+example.com/m/a.go:3.21,4.11 1 2
+example.com/m/a.go:4.11,6.3 1 0
+example.com/m/a.go:7.2,7.10 1 2
+example.com/m/internal/x.go:3.14,5.2 1 0

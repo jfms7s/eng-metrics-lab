@@ -20,7 +20,7 @@ runs:
         docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp
         -v "$WORKSPACE:/work" -w /work
         -e GITHUB_ACTIONS -e GITHUB_REPOSITORY -e GITHUB_REF_NAME -e GITHUB_HEAD_REF -e GITHUB_RUN_ID
-        -e QUALITY_COMMIT="$HEAD_SHA"
+        -e QUALITY_COMMIT="$HEAD_SHA" -e QUALITY_HOST_WORKSPACE="$WORKSPACE"
         "$IMAGE" quality-report run --out .quality/report.json
     - uses: actions/upload-artifact@v4
       if: always()
@@ -30,6 +30,14 @@ runs:
         # .quality/ is a hidden directory; upload-artifact >= 4.4 skips hidden files by default
         include-hidden-files: true
         retention-days: 30
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: ${{ inputs.artifact-name }}-details
+        path: .quality/details.json
+        include-hidden-files: true
+        retention-days: 30
+        if-no-files-found: ignore
     - name: Check the ratchet
       shell: bash
       env:
@@ -40,3 +48,14 @@ runs:
         -v "$WORKSPACE:/work" -w /work
         "$IMAGE" quality-report ratchet
         --baseline .quality-baseline.json --report .quality/report.json
+    - name: Show feedback in the step summary
+      if: always()
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        WORKSPACE: ${{ github.workspace }}
+      run: >-
+        docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp
+        -v "$WORKSPACE:/work" -w /work
+        "$IMAGE" quality-report feedback
+        >> "$GITHUB_STEP_SUMMARY" || true

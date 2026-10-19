@@ -16,8 +16,17 @@ B = {
 }
 
 
-def R(dup=3.4, dead=42, over10=57, over7=100, thr=10, branch="main"):
-    return {
+def R(
+    dup=3.4,
+    dead=42,
+    over10=57,
+    over7=100,
+    thr=10,
+    branch="main",
+    cognitive=None,
+    coverage=None,
+):
+    report = {
         "branch": branch,
         "commit": "abc1234",
         "duplication": None if dup is None else {"percent": dup},
@@ -28,6 +37,33 @@ def R(dup=3.4, dead=42, over10=57, over7=100, thr=10, branch="main"):
             "over": {"7": over7, "10": over10, "15": 1},
         },
     }
+    if cognitive is not None:
+        report["cognitive"] = cognitive
+    if coverage is not None:
+        report["coverage"] = coverage
+    return report
+
+
+def COG(thr=15, over=None, count=3):
+    over = over or {"10": 8, "15": 3, "25": 1}
+    return {
+        "metric": "cognitive",
+        "threshold": thr,
+        "functions_over_threshold": count,
+        "over": over,
+    }
+
+
+def COV(pct):
+    return {"lines_percent": pct}
+
+
+BN = {
+    **B,
+    "cognitive_threshold": 15,
+    "cognitive_over_threshold": 3,
+    "coverage_lines_percent": 70.0,
+}
 
 
 @pytest.mark.parametrize(
@@ -120,6 +156,9 @@ def test_make_baseline_shape_and_nulls():
         "dead_code_total": 42,
         "complexity_threshold": 10,
         "functions_over_threshold": 57,
+        "cognitive_threshold": None,
+        "cognitive_over_threshold": None,
+        "coverage_lines_percent": None,
     }
     b = make_baseline(R(dup=None, dead=None), now)
     assert b["duplication_percent"] is None and b["dead_code_total"] is None
@@ -171,3 +210,84 @@ def test_cli_baseline_prints_json(tmp_path, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["schema"] == 1 and out["commit"] == "abc1234"
     assert out["recorded_at"].endswith("Z")
+
+
+def test_cognitive_rise_fails():
+    res = check(R(cognitive=COG(count=4)), BN)
+    assert res["result"] == "fail"
+    assert res["violations"] == [
+        {
+            "field": "cognitive.functions_over_threshold",
+            "baseline": 3,
+            "current": 4,
+            "tolerance": 0,
+        }
+    ]
+
+
+def test_cognitive_same_passes():
+    assert check(R(cognitive=COG(count=3), coverage=COV(70.0)), BN)["result"] == "pass"
+
+
+def test_cognitive_threshold_mismatch_reads_over():
+    base = {**BN, "cognitive_threshold": 10, "cognitive_over_threshold": 8}
+    assert check(R(cognitive=COG(thr=15, count=3)), base)["result"] == "pass"
+    worse = COG(thr=15, count=3, over={"10": 9, "15": 3, "25": 1})
+    res = check(R(cognitive=worse), base)
+    assert res["result"] == "fail"
+    assert res["violations"][0]["current"] == 9
+
+
+def test_cognitive_threshold_mismatch_without_over_entry_is_skipped(capsys):
+    base = {**BN, "cognitive_threshold": 12, "cognitive_over_threshold": 0}
+    assert check(R(cognitive=COG(thr=15, count=99)), base)["result"] == "pass"
+    assert "cognitive" in capsys.readouterr().err
+
+
+def test_coverage_drop_beyond_tolerance_fails():
+    res = check(R(coverage=COV(69.89)), BN)
+    assert res["result"] == "fail"
+    assert res["violations"] == [
+        {
+            "field": "coverage.lines_percent",
+            "baseline": 70.0,
+            "current": 69.89,
+            "tolerance": 0.1,
+        }
+    ]
+
+
+def test_coverage_drop_within_tolerance_passes():
+    assert check(R(coverage=COV(69.9)), BN)["result"] == "pass"
+
+
+def test_coverage_rise_passes_and_can_tighten():
+    report = R(coverage=COV(71.0))
+    assert check(report, BN)["result"] == "pass"
+    assert can_tighten(report, BN)
+
+
+def test_coverage_within_tolerance_does_not_tighten():
+    assert not can_tighten(R(coverage=COV(70.05)), BN)
+
+
+def test_cognitive_drop_can_tighten():
+    assert can_tighten(R(cognitive=COG(count=2)), BN)
+
+
+def test_old_baseline_ignores_new_rows():
+    terrible = R(cognitive=COG(count=9999), coverage=COV(0.0))
+    assert check(terrible, B) == check(R(), B)
+    assert can_tighten(terrible, B) == can_tighten(R(), B)
+
+
+def test_make_baseline_includes_new_keys():
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    base = make_baseline(R(cognitive=COG(count=3), coverage=COV(70.0)), now)
+    assert base["cognitive_threshold"] == 15
+    assert base["cognitive_over_threshold"] == 3
+    assert base["coverage_lines_percent"] == 70.0
+    empty = make_baseline(R(), now)
+    assert empty["cognitive_threshold"] is None
+    assert empty["cognitive_over_threshold"] is None
+    assert empty["coverage_lines_percent"] is None

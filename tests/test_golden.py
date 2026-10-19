@@ -27,6 +27,8 @@ def test_ts_mini(out):
     assert r["duplication"]["clones"] == 1
     assert r["complexity"]["functions_over_threshold"] == 1
     assert r["complexity"]["over"] == {"7": 1, "10": 1, "15": 0}
+    assert r["cognitive"]["max"] == 11  # branchy.ts: 11 flat ifs
+    assert r["cognitive"]["over"] == {"10": 1, "15": 0, "25": 0}
     assert r["languages"] == ["typescript"]
     assert r["tools"]["quality-report"] == importlib.metadata.version("quality-report")
     assert {"jscpd", "lizard", "cargo-machete"} <= set(r["tools"])
