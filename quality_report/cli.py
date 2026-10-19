@@ -11,7 +11,7 @@ from pathlib import Path
 
 import psycopg
 
-from quality_report import ratchet, store
+from quality_report import feedback, ratchet, store
 from quality_report import report as report_run
 
 BASELINE_SCHEMA = 1
@@ -105,6 +105,29 @@ def _cmd_store(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_feedback(args: argparse.Namespace) -> int:
+    """Advisory: print markdown for the report; always returns 0."""
+    try:
+        report = _load_json(args.report)
+    except (OSError, ValueError) as exc:
+        print(
+            f"quality-report: cannot read report {args.report}: {exc}", file=sys.stderr
+        )
+        return 0
+    details = None
+    if Path(args.details).is_file():
+        try:
+            details = _load_json(args.details)
+        except (OSError, ValueError) as exc:
+            print(
+                f"quality-report: cannot read details {args.details}: {exc}",
+                file=sys.stderr,
+            )
+    changed = feedback.changed_files(Path.cwd(), args.base) if args.base else None
+    print(feedback.render_feedback(report, details, changed, args.max), end="")
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="quality-report")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -126,6 +149,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("store", help="store a report in Postgres (QUALITY_DB_URL)")
     p.add_argument("report", metavar="PATH")
     p.set_defaults(func=_cmd_store)
+
+    p = sub.add_parser("feedback", help="print the offenders of a change as markdown")
+    p.add_argument("--report", default=".quality/report.json", metavar="PATH")
+    p.add_argument("--details", default=".quality/details.json", metavar="PATH")
+    p.add_argument("--base", metavar="REF")
+    p.add_argument("--max", type=int, default=20, metavar="N")
+    p.set_defaults(func=_cmd_feedback)
     return parser
 
 
