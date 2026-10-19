@@ -1,8 +1,11 @@
 import json
+import secrets
 from pathlib import Path
 
 import psycopg
 import pytest
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
 
 from collector.migrate import migrate
 from quality_report import cli
@@ -81,6 +84,37 @@ def test_report_row_maps_columns():
     assert row["dead_total"] == 23 and row["cc_max"] == 48
 
 
+NEW_COLUMNS = (
+    "cog_threshold",
+    "cog_over",
+    "cog_over_by",
+    "cog_max",
+    "cog_p95",
+    "cog_avg",
+    "cov_lines",
+    "cov_branches",
+    "crap_over",
+    "crap_max",
+)
+
+
+def test_report_row_new_columns():
+    row = report_row(json.loads(SAMPLE.read_text()))
+    assert row["cog_threshold"] == 15 and row["cog_over"] == 21
+    assert row["cog_over_by"] == {"10": 48, "15": 21, "25": 6}
+    assert row["cog_max"] == 61 and row["cog_p95"] == 14 and row["cog_avg"] == 3.9
+    assert row["cov_lines"] == 71.3 and row["cov_branches"] == 55.0
+    assert row["crap_over"] == 12 and row["crap_max"] == 210.5
+
+
+def test_report_row_new_columns_null_for_old_report():
+    old = json.loads(SAMPLE.read_text())
+    for key in ("cognitive", "coverage", "test_gap"):
+        del old[key]
+    row = report_row(old)
+    assert [row[c] for c in NEW_COLUMNS] == [None] * 10
+
+
 def test_report_row_null_metrics():
     r = json.loads(SAMPLE.read_text()) | {"dead_code": None}
     assert report_row(r)["dead_total"] is None
@@ -136,6 +170,61 @@ def test_store_malformed_url_hides_secret(monkeypatch, capsys, url, secret):
 def test_migrate_is_idempotent(admin_url, passwords):
     migrate(admin_url, passwords)
     migrate(admin_url, passwords)
+
+
+_V020_SCHEMA = """
+create table quality_reports (
+  repo text not null, commit text not null, branch text not null,
+  generated_at timestamptz not null, ci_system text not null,
+  dup_percent numeric, dup_lines int, dup_clones int,
+  dead_total int, dead_by_kind jsonb,
+  cc_threshold int, cc_over int, cc_over_by jsonb, cc_max int, cc_p95 numeric, cc_avg numeric,
+  nloc int, functions int,
+  ratchet_result text, ratchet_violations jsonb,
+  raw jsonb not null,
+  primary key (repo, commit, branch)
+);
+"""
+
+
+@pytest.mark.db
+def test_migrate_adds_new_columns_to_existing_table(_server_url, passwords):
+    name = f"quality_test_{secrets.token_hex(4)}"
+    with psycopg.connect(_server_url, autocommit=True) as conn:
+        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    url = make_conninfo(_server_url, dbname=name)
+    try:
+        with psycopg.connect(url) as conn:
+            conn.execute(_V020_SCHEMA)
+        migrate(url, passwords)
+        migrate(url, passwords)
+        with psycopg.connect(url) as conn:
+            found = {
+                r[0]
+                for r in conn.execute(
+                    "select column_name from information_schema.columns "
+                    "where table_name = 'quality_reports'"
+                )
+            }
+        assert set(NEW_COLUMNS) <= found
+    finally:
+        with psycopg.connect(_server_url, autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
+            )
+
+
+@pytest.mark.db
+def test_writer_inserts_new_columns(admin_url, writer_conn, sample):
+    other = sample | {"branch": "feature/new-columns"}
+    assert insert_report(writer_conn, other) is True
+    with psycopg.connect(admin_url) as conn:
+        row = conn.execute(
+            "select cog_over_by, cog_max, cov_lines, crap_over from quality_reports "
+            "where branch = 'feature/new-columns'"
+        ).fetchone()
+    assert row[0] == {"10": 48, "15": 21, "25": 6}
+    assert row[1] == 61 and float(row[2]) == 71.3 and row[3] == 12
 
 
 @pytest.mark.db

@@ -6,7 +6,13 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 CONNECT_TIMEOUT = 10
-_JSON_COLUMNS = ("dead_by_kind", "cc_over_by", "ratchet_violations", "raw")
+_JSON_COLUMNS = (
+    "dead_by_kind",
+    "cc_over_by",
+    "cog_over_by",
+    "ratchet_violations",
+    "raw",
+)
 
 _COLUMNS = (
     "repo",
@@ -27,6 +33,16 @@ _COLUMNS = (
     "cc_avg",
     "nloc",
     "functions",
+    "cog_threshold",
+    "cog_over",
+    "cog_over_by",
+    "cog_max",
+    "cog_p95",
+    "cog_avg",
+    "cov_lines",
+    "cov_branches",
+    "crap_over",
+    "crap_max",
     "ratchet_result",
     "ratchet_violations",
     "raw",
@@ -43,6 +59,9 @@ def report_row(report: dict) -> dict[str, object]:
     dup = report.get("duplication") or {}
     dead = report.get("dead_code") or {}
     cx = report.get("complexity") or {}
+    cog = report.get("cognitive") or {}
+    cov = report.get("coverage") or {}
+    gap = report.get("test_gap") or {}
     size = report.get("size") or {}
     ratchet = report.get("ratchet") or {}
     return {
@@ -64,6 +83,16 @@ def report_row(report: dict) -> dict[str, object]:
         "cc_avg": cx.get("avg"),
         "nloc": size.get("nloc"),
         "functions": size.get("functions"),
+        "cog_threshold": cog.get("threshold"),
+        "cog_over": cog.get("functions_over_threshold"),
+        "cog_over_by": cog.get("over"),
+        "cog_max": cog.get("max"),
+        "cog_p95": cog.get("p95"),
+        "cog_avg": cog.get("avg"),
+        "cov_lines": cov.get("lines_percent"),
+        "cov_branches": cov.get("branches_percent"),
+        "crap_over": gap.get("functions_over_threshold"),
+        "crap_max": gap.get("max"),
         "ratchet_result": ratchet.get("result"),
         "ratchet_violations": ratchet.get("violations"),
         "raw": report,
