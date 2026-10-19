@@ -16,14 +16,24 @@ def _worst_first(entries: list[dict]) -> list[dict]:
     return sorted(entries, key=lambda e: (-e["value"], e["file"], e["line"]))
 
 
+def _clone_order(clone: dict) -> tuple[int, str, int]:
+    a, b = clone["a"], clone["b"]
+    size = max(a["end"] - a["start"], b["end"] - b["start"])
+    return (-size, a["file"], a["start"])
+
+
 def build_details(
     functions: list[FunctionStat],
     complexity_threshold: int,
-    cognitive_threshold: int,
+    cognitive_threshold: int | None,
     scored: list[ScoredFunction],
     clones: list[dict],
 ) -> dict:
-    """Offenders only (strictly over each threshold), each list worst first."""
+    """Offenders only (strictly over each threshold), each list worst first.
+
+    A None `cognitive_threshold` (the report's cognitive block is null) lists no
+    cognitive offenders. Duplication is listed largest clone first.
+    """
     complexity = [
         _entry(f.file, f.name, f.start, f.ccn)
         for f in functions
@@ -32,7 +42,9 @@ def build_details(
     cognitive = [
         _entry(f.file, f.name, f.start, f.cognitive)
         for f in functions
-        if f.cognitive is not None and f.cognitive > cognitive_threshold
+        if cognitive_threshold is not None
+        and f.cognitive is not None
+        and f.cognitive > cognitive_threshold
     ]
     test_gap = [
         {**_entry(s.file, s.name, s.start, s.crap), "coverage": s.coverage}
@@ -44,5 +56,5 @@ def build_details(
         "complexity": _worst_first(complexity),
         "cognitive": _worst_first(cognitive),
         "test_gap": _worst_first(test_gap),
-        "duplication": clones,
+        "duplication": sorted(clones, key=_clone_order),
     }

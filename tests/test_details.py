@@ -132,3 +132,41 @@ def test_run_ignores_stale_jscpd_report_when_jscpd_fails(tmp_path, monkeypatch):
     report = run(FIX / "ts-mini", out, env=CTX_ENV)
     assert report["duplication"] is None
     assert json.loads((out.parent / "details.json").read_text())["duplication"] == []
+
+
+def test_build_details_cognitive_empty_when_report_cognitive_null():
+    functions = [_fn("a.ts", "worst", 3, 30, 40)]
+    d = build_details(functions, 10, None, [], [])
+    assert d["cognitive"] == []
+    assert [e["function"] for e in d["complexity"]] == ["worst"]
+
+
+def test_run_details_cognitive_empty_when_report_cognitive_null(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", "")
+    rows = (
+        '30,60,100,1,30,"big@1-30@a.ts","a.ts","big","big()",1,30,40\n'
+        '1,2,9,0,1,"small@40-41@a.ts","a.ts","small","small()",40,41\n'
+    )  # second row has no CogC, so the report's cognitive block is null
+    monkeypatch.setattr("quality_report.report.run_lizard", lambda *a, **k: rows)
+    out = tmp_path / "out" / "r.json"
+    report = run(FIX / "ts-mini", out, env=CTX_ENV)
+    assert report["cognitive"] is None
+    details = json.loads((out.parent / "details.json").read_text())
+    assert details["cognitive"] == []
+    assert [e["function"] for e in details["complexity"]] == ["big()"]
+
+
+def test_build_details_duplication_largest_clone_first():
+    def clone(af, a0, a1, bf="z", b0=1, b1=2):
+        return {
+            "a": {"file": af, "start": a0, "end": a1},
+            "b": {"file": bf, "start": b0, "end": b1},
+        }
+
+    small = clone("a", 1, 5)
+    big_b = clone("c", 1, 2, "d", 1, 50)  # size comes from the larger side
+    tie_late = clone("b", 20, 30)
+    tie_early = clone("b", 3, 13)
+    tie_file = clone("a", 40, 50)
+    d = build_details([], 10, 15, [], [small, tie_late, big_b, tie_early, tie_file])
+    assert d["duplication"] == [big_b, tie_file, tie_early, tie_late, small]

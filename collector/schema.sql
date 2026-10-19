@@ -1,3 +1,4 @@
+set local lock_timeout = '10s';
 create table if not exists quality_reports (
   repo text not null, commit text not null, branch text not null,
   generated_at timestamptz not null, ci_system text not null,

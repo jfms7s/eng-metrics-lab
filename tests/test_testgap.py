@@ -49,6 +49,28 @@ def test_function_in_file_without_data_is_counted_not_scored():
     assert score_functions([_fn()], data) == ([], 1)
 
 
+def test_nested_function_lines_excluded_from_outer():
+    lines = {1: 1, 2: 1, 19: 1, 20: 1} | {n: 0 for n in range(5, 16)}
+    data = _data({"a.py": FileCoverage(lines=lines)})
+    outer = FunctionStat("a.py", "outer", 11, 20, start=1, end=20)
+    inner = FunctionStat("a.py", "outer.inner", 3, 11, start=5, end=15)
+    scored, without = score_functions([outer, inner], data)
+    assert without == 0
+    by_name = {s.name: s for s in scored}
+    assert by_name["outer"].coverage == 1.0
+    assert by_name["outer"].crap == 11.0
+    assert by_name["outer.inner"].coverage == 0.0
+
+
+def test_function_of_untested_language_is_not_counted():
+    data = _data({"a.py": FileCoverage(lines={10: 1})})
+    data.untested_languages = ["rust"]
+    rust = FunctionStat("src/lib.rs", "g", 4, 9, start=1, end=9)
+    py_missing = FunctionStat("b.py", "h", 4, 9, start=1, end=9)
+    assert score_functions([rust], data) == ([], 0)
+    assert score_functions([rust, py_missing], data) == ([], 1)
+
+
 def test_summarize_test_gap():
     scored = [ScoredFunction("a.py", "f", 1, 5, 0.5, c) for c in (2.0, 31.0, 110.0)]
     assert summarize_test_gap(scored, 0) == {

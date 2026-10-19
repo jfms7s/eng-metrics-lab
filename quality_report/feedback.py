@@ -99,8 +99,9 @@ def render_feedback(
 ) -> str:
     """Render the report as markdown.
 
-    `max_items` caps the offenders listed across all sections together, in
-    section order; the rest are summed in a closing `… and N more`.
+    `max_items` is split into a per-section budget of `max(1, max_items // 4)`
+    offenders for each of the four sections; a section with more than its budget
+    ends with its own `… and N more` line.
     """
     lines = ["### quality-report", "", _headline(report), ""]
     ratchet = _ratchet_lines(report)
@@ -109,17 +110,14 @@ def render_feedback(
     if details is None:
         return "\n".join(lines).rstrip() + "\n"
 
-    remaining = max_items
-    hidden = 0
+    budget = max(1, max_items // len(_SECTIONS))
     for key, title, item in _SECTIONS:
         entries = [e for e in details.get(key) or [] if _in_changed(e, changed)]
-        shown = entries[: max(remaining, 0)]
-        hidden += len(entries) - len(shown)
-        remaining -= len(shown)
-        if shown:
-            lines += [f"**{title}**", ""]
-            lines += [f"- {item(e)}" for e in shown]
-            lines.append("")
-    if hidden:
-        lines += [f"… and {hidden} more", ""]
+        if not entries:
+            continue
+        lines += [f"**{title}**", ""]
+        lines += [f"- {item(e)}" for e in entries[:budget]]
+        if len(entries) > budget:
+            lines.append(f"… and {len(entries) - budget} more")
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"

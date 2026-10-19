@@ -234,7 +234,7 @@ def _run(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n")
-    _write_details(repo, out, config, functions, coverage, jscpd_report)
+    _write_details(repo, out, config, functions, coverage, jscpd_report, report)
     return report, functions
 
 
@@ -245,13 +245,14 @@ def _write_details(
     functions: list[FunctionStat],
     coverage: CoverageData | None,
     jscpd_report: Path | None,
+    report: dict,
 ) -> None:
     scored = [] if coverage is None else score_functions(functions, coverage)[0]
     clones = [] if jscpd_report is None else parse_jscpd_clones(jscpd_report, repo)
     details = build_details(
         functions,
         config.complexity_threshold,
-        config.cognitive_threshold,
+        None if report["cognitive"] is None else config.cognitive_threshold,
         scored,
         clones,
     )

@@ -172,6 +172,7 @@ def test_migrate_is_idempotent(admin_url, passwords):
     migrate(admin_url, passwords)
 
 
+# Frozen snapshot of the 0.2.0 schema; do not update it with schema.sql.
 _V020_SCHEMA = """
 create table quality_reports (
   repo text not null, commit text not null, branch text not null,

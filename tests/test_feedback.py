@@ -64,9 +64,22 @@ def test_render_filters_to_changed_files():
 
 
 def test_render_caps_items():
+    # max_items=2 -> a budget of max(1, 2 // 4) == 1 item per section
     out = render_feedback(REPORT, DETAILS, None, max_items=2)
-    assert out.count("\n- `") == 2
-    assert out.rstrip().endswith("… and 3 more")
+    assert out.count("\n- `") == 3  # one each: complexity, test gap, duplication
+    assert "`a.py:1` f (30" in out and "`b.py:1`" not in out
+    assert out.count("… and") == 1  # only complexity (3 offenders) exceeds its budget
+    assert "… and 2 more" in out
+
+
+def test_render_budget_is_per_section():
+    complexity = [_fn(f"c{i:02}.py", 100 - i) for i in range(30)]
+    cognitive = [_fn(f"g{i}.py", 50 - i) for i in range(3)]
+    details = {**DETAILS, "complexity": complexity, "cognitive": cognitive}
+    out = render_feedback(REPORT, details, None, max_items=20)
+    assert "`c04.py:1`" in out and "`c05.py:1`" not in out
+    assert "… and 25 more" in out
+    assert out.count("`g") == 3  # all cognitive offenders are listed
 
 
 def _write(tmp_path: Path, details: dict | None = DETAILS) -> list[str]:
