@@ -119,7 +119,14 @@ def _measure_test_gap(
 ) -> dict | None:
     if coverage is None:
         return None
-    return summarize_test_gap(*score_functions(functions, coverage))
+    scored, without_data = score_functions(functions, coverage)
+    summary = summarize_test_gap(scored, without_data)
+    if summary is None and functions:
+        warn(
+            f"{without_data} functions have no coverage data and none could be "
+            "scored; test_gap null"
+        )
+    return summary
 
 
 def _measure_duplication(

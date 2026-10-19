@@ -72,3 +72,14 @@ def test_test_gap_null_when_coverage_null(tmp_path, monkeypatch):
     monkeypatch.setattr("quality_report.report.run_jscpd", lambda *a, **k: None)
     env = {"QUALITY_REPO": "t", "QUALITY_COMMIT": "c", "QUALITY_BRANCH": "b"}
     assert run(repo, tmp_path / "out.json", env=env)["test_gap"] is None
+
+
+def test_measure_test_gap_warns_when_nothing_scored(capsys):
+    from quality_report.report import _measure_test_gap
+
+    data = _data({"b.py": FileCoverage(lines={10: 1})})
+    assert _measure_test_gap([_fn(), _fn()], data) is None
+    err = capsys.readouterr().err
+    assert "quality-report: warning:" in err and "2 functions have no coverage" in err
+    assert _measure_test_gap([], data) is None
+    assert capsys.readouterr().err == ""
