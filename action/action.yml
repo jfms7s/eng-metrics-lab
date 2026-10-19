@@ -58,4 +58,4 @@ runs:
         docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp
         -v "$WORKSPACE:/work" -w /work
         "$IMAGE" quality-report feedback
-        >> "$GITHUB_STEP_SUMMARY"
+        >> "$GITHUB_STEP_SUMMARY" || true
