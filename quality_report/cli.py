@@ -48,7 +48,7 @@ def _cmd_ratchet(args: argparse.Namespace) -> int:
     outcome = ratchet.check(report, baseline)
     for v in outcome["violations"]:
         print(
-            f"{v['field']}: {v['current']} exceeds baseline {v['baseline']} "
+            f"{v['field']}: {v['current']} is worse than baseline {v['baseline']} "
             f"(tolerance {v['tolerance']})"
         )
     print(f"ratchet: {outcome['result']}")
