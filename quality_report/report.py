@@ -37,7 +37,6 @@ from quality_report.deadcode import (
 from quality_report.details import build_details
 from quality_report.detect import detect_languages
 from quality_report.duplication import (
-    REPORT_NAME,
     duplication_formats,
     parse_jscpd_clones,
     parse_jscpd_report,
@@ -139,15 +138,18 @@ def _measure_duplication(
     out_dir: Path,
     languages: list[str],
     formats_override: list[str] | None,
-) -> dict | None:
+) -> tuple[dict | None, Path | None]:
+    """The duplication summary and the jscpd report path of *this* run (None if it did not run)."""
     formats = duplication_formats(languages, formats_override)
     if not formats:
         warn(
             "no code languages detected and no duplication_formats set; duplication skipped"
         )
-        return None
+        return None, None
     report_path = run_jscpd(repo, exclude, min_tokens, out_dir, formats)
-    return None if report_path is None else parse_jscpd_report(report_path, min_tokens)
+    if report_path is None:
+        return None, None
+    return parse_jscpd_report(report_path, min_tokens), report_path
 
 
 def _measure_dead_code(
@@ -204,20 +206,21 @@ def _run(
         repo, languages, config.coverage_languages, config.exclude, env
     )
 
+    # jscpd's output goes beside the report, never inside the analysed repo.
+    duplication, jscpd_report = _measure_duplication(
+        repo,
+        config.exclude,
+        config.duplication_min_tokens,
+        out.parent / "jscpd",
+        languages,
+        config.duplication_formats,
+    )
     report = build_report(
         ctx,
         languages,
         tool_versions(),
         summarize_size(functions),
-        # jscpd's output goes beside the report, never inside the analysed repo.
-        _measure_duplication(
-            repo,
-            config.exclude,
-            config.duplication_min_tokens,
-            out.parent / "jscpd",
-            languages,
-            config.duplication_formats,
-        ),
+        duplication,
         _measure_dead_code(repo, config.exclude, languages),
         summarize_complexity(functions, config.complexity_threshold),
         _SKIPPED_RATCHET,
@@ -231,7 +234,7 @@ def _run(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n")
-    _write_details(repo, out, config, functions, coverage)
+    _write_details(repo, out, config, functions, coverage, jscpd_report)
     return report, functions
 
 
@@ -241,10 +244,10 @@ def _write_details(
     config: Config,
     functions: list[FunctionStat],
     coverage: CoverageData | None,
+    jscpd_report: Path | None,
 ) -> None:
     scored = [] if coverage is None else score_functions(functions, coverage)[0]
-    jscpd_report = out.parent / "jscpd" / REPORT_NAME
-    clones = parse_jscpd_clones(jscpd_report, repo) if jscpd_report.is_file() else []
+    clones = [] if jscpd_report is None else parse_jscpd_clones(jscpd_report, repo)
     details = build_details(
         functions,
         config.complexity_threshold,

@@ -110,11 +110,25 @@ def test_run_writes_details_next_to_report(tmp_path, monkeypatch, capsys):
     }
 
 
-def test_run_lists_clones_from_jscpd_report_beside_out(tmp_path, monkeypatch):
+def _stub_jscpd(monkeypatch, result):
+    monkeypatch.setattr("quality_report.report.run_jscpd", lambda *a, **k: result)
+
+
+def test_run_lists_clones_from_the_report_jscpd_returned(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", "")
+    _stub_jscpd(monkeypatch, FIX / "jscpd-sample.json")
+    out = tmp_path / "out" / "r.json"
+    run(FIX / "ts-mini", out, env=CTX_ENV)
+    clones = json.loads((out.parent / "details.json").read_text())["duplication"]
+    assert clones[0]["a"]["file"] == "src/a.ts"
+
+
+def test_run_ignores_stale_jscpd_report_when_jscpd_fails(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "")
     out = tmp_path / "out" / "r.json"
     (out.parent / "jscpd").mkdir(parents=True)
     shutil.copy(FIX / "jscpd-sample.json", out.parent / "jscpd" / "jscpd-report.json")
-    run(FIX / "ts-mini", out, env=CTX_ENV)
-    clones = json.loads((out.parent / "details.json").read_text())["duplication"]
-    assert clones[0]["a"]["file"] == "src/a.ts"
+    _stub_jscpd(monkeypatch, None)
+    report = run(FIX / "ts-mini", out, env=CTX_ENV)
+    assert report["duplication"] is None
+    assert json.loads((out.parent / "details.json").read_text())["duplication"] == []
