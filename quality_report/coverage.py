@@ -208,9 +208,26 @@ def _go_module(rel: str, go_modules: Mapping[str, str]) -> str | None:
 
 
 def _candidates(
-    raw: str, repo: Path, prefixes: list[str], go_modules: Mapping[str, str]
+    raw: str,
+    repo: Path,
+    prefixes: list[str],
+    go_modules: Mapping[str, str],
+    *,
+    go: bool,
 ) -> Iterator[str]:
-    """Repo-relative readings of a coverage path, in the spec's normalisation order."""
+    """Repo-relative readings of a coverage path, in the spec's normalisation order.
+
+    A Go coverprofile path (`go`) is an import path: it has a reading only through
+    a module in `go_modules`, never as a literal relative or absolute path.
+    """
+    if go:
+        rel = _inside(raw)
+        module = None if rel is None else _go_module(rel, go_modules)
+        if module is not None:
+            mapped = _inside(posixpath.join(go_modules[module], rel[len(module) + 1 :]))
+            if mapped is not None:
+                yield mapped
+        return
     if raw.startswith("/"):
         for root in (str(repo.absolute()), str(repo.resolve()), *prefixes):
             rel = _under(raw, root) if root else None
@@ -218,31 +235,34 @@ def _candidates(
                 yield rel
         return
     rel = _inside(raw)
-    if rel is None:
-        return
-    module = _go_module(rel, go_modules)
-    if module is None:
+    if rel is not None:
         yield rel
-        return
-    # An import path is only ever read through its module: its literal reading may
-    # name an unrelated repo file (module `app` in server/, a repo dir app/).
-    rest = rel[len(module) + 1 :]
-    mapped = _inside(posixpath.join(go_modules[module], rest))
-    if mapped is not None:
-        yield mapped
 
 
 def normalize_path(
-    raw: str, repo: Path, prefixes: list[str], go_modules: dict[str, str]
+    raw: str,
+    repo: Path,
+    prefixes: list[str],
+    go_modules: dict[str, str],
+    *,
+    go: bool = False,
 ) -> str | None:
     """The repo-relative POSIX path a coverage path names, or None if no repo file matches.
 
-    Tried in order: relative to the repo root (`./` stripped); absolute under the repo
-    root, then under each of `prefixes`. A relative path under a module in `go_modules`
-    is a Go import path and is read only as that module's directory plus the rest.
-    Only a path naming an existing file inside the repo matches.
+    A path under a module in `go_modules` is a Go import path, read only as that
+    module's directory plus the rest (its literal reading may name an unrelated repo
+    file: module `app` in server/, a repo dir app/). Any other path is tried in order:
+    relative to the repo root (`./` stripped); absolute under the repo root, then under
+    each of `prefixes`. Only a path naming an existing file inside the repo matches.
+
+    `go=True` marks a Go coverprofile path: it matches only through a module, so one
+    under no module in `go_modules` (an ambiguous, excluded or skipped go.mod, a
+    dependency) is unmatched and is never read as a literal repo path.
     """
-    for rel in _candidates(raw, repo, prefixes, go_modules):
+    if not go:
+        rel = _inside(raw)
+        go = rel is not None and _go_module(rel, go_modules) is not None
+    for rel in _candidates(raw, repo, prefixes, go_modules, go=go):
         if (repo / rel).is_file():
             return rel
     return None
@@ -260,11 +280,9 @@ def _excluded_elsewhere(
 
     Build output and dependencies (`dist/`, `node_modules`) are often absent where the
     report runs; they are excluded, not unmatched. Go paths are import paths, so a
-    Go path under no known module is not a repo path to judge: it stays unmatched.
+    Go path under no known module has no reading to judge: it stays unmatched.
     """
-    if language == "go" and _go_module(raw, go_modules) is None:
-        return False
-    readings = _candidates(raw, repo, prefixes, go_modules)
+    readings = _candidates(raw, repo, prefixes, go_modules, go=language == "go")
     return any(is_excluded(Path(rel), exclude) for rel in readings)
 
 
@@ -340,7 +358,7 @@ def load_coverage(
         modules = go_modules if language == "go" else {}
         matched_lines = False
         for raw, cov in data.items():
-            rel = normalize_path(raw, repo, prefixes, modules)
+            rel = normalize_path(raw, repo, prefixes, modules, go=language == "go")
             if rel is not None:
                 if not is_excluded(Path(rel), exclude):
                     _merge_file(files, rel, cov)

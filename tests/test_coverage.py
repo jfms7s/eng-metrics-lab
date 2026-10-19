@@ -197,6 +197,15 @@ def test_normalize_go_import_path_wins_over_a_same_named_repo_path(repo):
     assert normalize_path("app/gone.go", repo, [], {"app": "server"}) is None
 
 
+def test_normalize_go_path_has_no_literal_reading(repo):
+    modules = {"example.com/m": "server"}
+    assert normalize_path("src/a.ts", repo, [], modules, go=True) is None
+    assert normalize_path(f"{repo}/src/a.ts", repo, [], modules, go=True) is None
+    assert normalize_path("example.com/m/a.go", repo, [], modules, go=True) == (
+        "server/a.go"
+    )
+
+
 def test_normalize_go_import_path_longest_module_wins(repo):
     (repo / "server" / "sub").mkdir()
     (repo / "server" / "sub" / "s.go").write_text("package sub\n")
@@ -303,6 +312,33 @@ def test_coverage_null_when_one_language_matches_nothing(repo, capsys):
     assert load_coverage(repo, ["go", "typescript"], None, EXCLUDE, NO_ENV) is None
     err = capsys.readouterr().err
     assert "go coverage matched no file" in err and "coverage null" in err
+
+
+def test_go_path_under_no_known_module_stays_unmatched(repo, capsys):
+    # Module `app` is declared twice, so it is dropped as ambiguous; an unrelated
+    # repo file app/a.go must not pick up the Go path app/a.go by its literal reading.
+    (repo / "server" / "go.mod").write_text("module app\n")
+    (repo / "tools").mkdir()
+    (repo / "tools" / "go.mod").write_text("module app\n")
+    (repo / "app").mkdir()
+    (repo / "app" / "a.go").write_text("package app\n")
+    _fragment(repo, "coverage-go.out", "mode: set\napp/a.go:3.1,3.12 1 1\n")
+    assert load_coverage(repo, ["go"], None, EXCLUDE, NO_ENV) is None
+    err = capsys.readouterr().err
+    assert "1 coverage file(s) name no file" in err
+    assert "go coverage matched no file" in err
+
+
+def test_go_paths_outside_modules_counted_unmatched(repo):
+    _fragment(
+        repo,
+        "coverage-go.out",
+        (FIX / "go.out").read_text()
+        + "src/a.ts:1.1,1.2 1 1\n/abs/src/b.ts:1.1,1.2 1 1\n",
+    )
+    data = load_coverage(repo, ["go"], None, EXCLUDE, NO_ENV)
+    assert data.unmatched_files == 2
+    assert set(data.files) == {"server/a.go", "server/internal/x.go"}
 
 
 def test_lcov_paths_are_not_read_as_go_import_paths(repo):
