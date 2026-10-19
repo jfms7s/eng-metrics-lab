@@ -19,7 +19,7 @@ from quality_report.complexity import (
     summarize_complexity,
     summarize_size,
 )
-from quality_report.config import load_config
+from quality_report.config import Config, load_config
 from quality_report.coverage import (
     FRAGMENT_DIR,
     CoverageData,
@@ -34,9 +34,12 @@ from quality_report.deadcode import (
     scan_python,
     scan_rust,
 )
+from quality_report.details import build_details
 from quality_report.detect import detect_languages
 from quality_report.duplication import (
+    REPORT_NAME,
     duplication_formats,
+    parse_jscpd_clones,
     parse_jscpd_report,
     run_jscpd,
 )
@@ -228,7 +231,28 @@ def _run(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n")
+    _write_details(repo, out, config, functions, coverage)
     return report, functions
+
+
+def _write_details(
+    repo: Path,
+    out: Path,
+    config: Config,
+    functions: list[FunctionStat],
+    coverage: CoverageData | None,
+) -> None:
+    scored = [] if coverage is None else score_functions(functions, coverage)[0]
+    jscpd_report = out.parent / "jscpd" / REPORT_NAME
+    clones = parse_jscpd_clones(jscpd_report, repo) if jscpd_report.is_file() else []
+    details = build_details(
+        functions,
+        config.complexity_threshold,
+        config.cognitive_threshold,
+        scored,
+        clones,
+    )
+    (out.parent / "details.json").write_text(json.dumps(details, indent=2) + "\n")
 
 
 def _fmt(value: object, suffix: str = "") -> str:
