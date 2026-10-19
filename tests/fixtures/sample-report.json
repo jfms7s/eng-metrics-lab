@@ -63,6 +63,21 @@
     "p95": 14,
     "avg": 3.9
   },
+  "coverage": {
+    "lines_percent": 71.3,
+    "lines_covered": 8120,
+    "lines_total": 11388,
+    "branches_percent": 55.0,
+    "branch_languages": [
+      "typescript"
+    ],
+    "languages": [
+      "typescript",
+      "rust"
+    ],
+    "untested_languages": [],
+    "unmatched_files": 0
+  },
   "ratchet": {
     "result": "pass",
     "baseline_commit": "0123abc",

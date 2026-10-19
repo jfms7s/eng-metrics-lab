@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from quality_report.detect import LANGUAGES
+
 DEFAULT_EXCLUDES: tuple[str, ...] = (
     "node_modules",
     "dist",
@@ -37,6 +39,7 @@ class Config:
     cognitive_threshold: int = 15
     duplication_min_tokens: int = 50
     duplication_formats: list[str] | None = None
+    coverage_languages: list[str] | None = None
 
 
 def load_config(repo: Path, path: Path | None = None) -> Config:
@@ -56,6 +59,7 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
         "cognitive_threshold",
         "duplication_min_tokens",
         "duplication_formats",
+        "coverage_languages",
     }
     unknown = sorted(set(raw) - known)
     if unknown:
@@ -74,6 +78,21 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
             f"{config_path}: 'duplication_formats' must be a list of strings"
         )
 
+    coverage_languages = raw.get("coverage_languages")
+    if coverage_languages is not None:
+        if not isinstance(coverage_languages, list) or not all(
+            isinstance(lang, str) for lang in coverage_languages
+        ):
+            raise TypeError(
+                f"{config_path}: 'coverage_languages' must be a list of strings"
+            )
+        bad = sorted(set(coverage_languages) - set(LANGUAGES))
+        if bad:
+            raise ValueError(
+                f"{config_path}: unknown coverage_languages: {', '.join(bad)} "
+                f"(known: {', '.join(LANGUAGES)})"
+            )
+
     defaults = Config(exclude=exclude)
     return Config(
         exclude=exclude,
@@ -87,4 +106,5 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
             raw.get("duplication_min_tokens", defaults.duplication_min_tokens)
         ),
         duplication_formats=formats,
+        coverage_languages=coverage_languages,
     )

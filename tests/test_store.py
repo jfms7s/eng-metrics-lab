@@ -20,6 +20,7 @@ def test_sample_fixture_matches_real_report_shape():
         summarize_complexity,
         summarize_size,
     )
+    from quality_report.coverage import CoverageData, FileCoverage, summarize_coverage
     from quality_report.report import build_report
 
     sample = json.loads(SAMPLE.read_text())
@@ -35,6 +36,15 @@ def test_sample_fixture_matches_real_report_shape():
         summarize_complexity(fns, 10),
         {"result": "pass", "baseline_commit": None, "violations": []},
         cognitive=summarize_cognitive(fns, 15),
+        coverage=summarize_coverage(
+            CoverageData(
+                files={"a.py": FileCoverage(lines={1: 1}, branches={"1,0,0": 1})},
+                languages=["python"],
+                untested_languages=[],
+                branch_languages=["python"],
+                unmatched_files=0,
+            )
+        ),
     )
     assert set(sample) == set(real)
     for section in (
@@ -44,6 +54,7 @@ def test_sample_fixture_matches_real_report_shape():
         "dead_code",
         "complexity",
         "cognitive",
+        "coverage",
         "ratchet",
     ):
         assert set(sample[section]) == set(real[section]), section

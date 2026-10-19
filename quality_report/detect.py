@@ -16,6 +16,9 @@ _MANIFESTS: tuple[tuple[str, str], ...] = (
     ("go.mod", "go"),
 )
 
+LANGUAGES: tuple[str, ...] = tuple(sorted({language for _, language in _MANIFESTS}))
+"""Every language name `detect_languages` can return."""
+
 
 def is_excluded(rel: Path, exclude: list[str]) -> bool:
     """True if a repo-relative path matches an exclude pattern.

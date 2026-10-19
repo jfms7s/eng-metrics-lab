@@ -20,6 +20,7 @@ from quality_report.complexity import (
     summarize_size,
 )
 from quality_report.config import load_config
+from quality_report.coverage import FRAGMENT_DIR, load_coverage, summarize_coverage
 from quality_report.deadcode import (
     GO_FRAGMENT,
     merge_dead_code,
@@ -38,7 +39,6 @@ from quality_report.tools import warn
 
 SCHEMA_VERSION = 1
 BASELINE_FILENAME = ".quality-baseline.json"
-FRAGMENT_DIR = ".quality"
 KNIP_FRAGMENT = "deadcode-ts.json"
 MAX_OFFENDERS_PRINTED = 10
 
@@ -56,6 +56,7 @@ def build_report(
     ratchet_result: dict,
     *,
     cognitive: dict | None = None,
+    coverage: dict | None = None,
 ) -> dict:
     return {
         "schema": SCHEMA_VERSION,
@@ -71,6 +72,7 @@ def build_report(
         "dead_code": dead_code,
         "complexity": complexity,
         "cognitive": cognitive,
+        "coverage": coverage,
         "ratchet": ratchet_result,
     }
 
@@ -172,6 +174,9 @@ def _run(
     ctx = resolve_context(env, repo)
     functions = _measure_complexity(repo, config.exclude)
     languages = detect_languages(repo, config.exclude)
+    coverage = load_coverage(
+        repo, languages, config.coverage_languages, config.exclude, env
+    )
 
     report = build_report(
         ctx,
@@ -191,6 +196,7 @@ def _run(
         summarize_complexity(functions, config.complexity_threshold),
         _SKIPPED_RATCHET,
         cognitive=_measure_cognitive(functions, config.cognitive_threshold),
+        coverage=summarize_coverage(coverage),
     )
     baseline = _load_baseline(repo)
     if baseline is not None:

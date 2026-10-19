@@ -48,8 +48,10 @@ def test_build_report_shape():
         "dead_code",
         "complexity",
         "cognitive",
+        "coverage",
         "ratchet",
     ]
+    assert r["coverage"] is None
 
 
 def test_run_with_missing_jscpd_sets_duplication_null(tmp_path, monkeypatch):
@@ -298,3 +300,39 @@ def test_measure_cognitive_warns_when_cogc_missing(capsys):
     assert "quality-report: warning:" in capsys.readouterr().err
     assert _measure_cognitive([], 15) is None
     assert capsys.readouterr().err == ""
+
+
+def test_run_reports_coverage_from_fragment(tmp_path, monkeypatch):
+    repo = _ts_repo(tmp_path)
+    (repo / "src").mkdir()
+    (repo / "src" / "a.ts").write_text("export const a = 1;\n")
+    (repo / ".quality").mkdir()
+    (repo / ".quality" / "coverage-ts.lcov").write_text(
+        f"SF:{repo}/src/a.ts\nDA:1,1\nDA:2,0\nend_of_record\n"
+    )
+    monkeypatch.setenv("PATH", "")
+    cov = run(repo, tmp_path / "r.json", env=CTX_ENV)["coverage"]
+    assert cov["lines_percent"] == 50.0 and cov["languages"] == ["typescript"]
+
+
+def test_run_coverage_honours_config_and_host_workspace(tmp_path, monkeypatch):
+    repo = _ts_repo(tmp_path)
+    (repo / "Cargo.toml").write_text("")
+    (repo / ".quality.yml").write_text("coverage_languages: [typescript]\n")
+    (repo / "a.ts").write_text("export const a = 1;\n")
+    (repo / ".quality").mkdir()
+    (repo / ".quality" / "coverage-ts.lcov").write_text(
+        "SF:/home/runner/work/r/r/a.ts\nDA:1,1\nend_of_record\n"
+    )
+    monkeypatch.setenv("PATH", "")
+    env = {**CTX_ENV, "QUALITY_HOST_WORKSPACE": "/home/runner/work/r/r"}
+    cov = run(repo, tmp_path / "r.json", env=env)["coverage"]
+    assert cov["lines_percent"] == 100.0
+    assert cov["untested_languages"] == ["rust"]
+
+
+def test_run_coverage_null_without_fragment(tmp_path, monkeypatch, capsys):
+    repo = _ts_repo(tmp_path)
+    monkeypatch.setenv("PATH", "")
+    assert run(repo, tmp_path / "r.json", env=CTX_ENV)["coverage"] is None
+    assert "coverage-ts*.lcov" in capsys.readouterr().err
