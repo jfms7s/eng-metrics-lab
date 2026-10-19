@@ -289,3 +289,12 @@ def test_dead_code_python_counts_flow_into_by_kind(tmp_path, monkeypatch):
     d = _measure_dead_code(tmp_path, list(DEFAULT_EXCLUDES), ["python"])
     assert d is not None and d["total"] == 4
     assert d["by_kind"]["unused_symbols"] == 3
+
+
+def test_measure_cognitive_warns_when_cogc_missing(capsys):
+    from quality_report.report import _measure_cognitive
+
+    assert _measure_cognitive([FunctionStat("a.ts", "f", 1, 2)], 15) is None
+    assert "quality-report: warning:" in capsys.readouterr().err
+    assert _measure_cognitive([], 15) is None
+    assert capsys.readouterr().err == ""

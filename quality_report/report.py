@@ -95,6 +95,15 @@ def _measure_complexity(repo: Path, exclude: list[str]) -> list[FunctionStat]:
     return [] if csv_text is None else parse_lizard_csv(csv_text, repo)
 
 
+def _measure_cognitive(functions: list[FunctionStat], threshold: int) -> dict | None:
+    summary = summarize_cognitive(functions, threshold)
+    if summary is None and functions:
+        warn(
+            "lizard gave no cognitive complexity (CogC column missing); cognitive null"
+        )
+    return summary
+
+
 def _measure_duplication(
     repo: Path,
     exclude: list[str],
@@ -181,7 +190,7 @@ def _run(
         _measure_dead_code(repo, config.exclude, languages),
         summarize_complexity(functions, config.complexity_threshold),
         _SKIPPED_RATCHET,
-        cognitive=summarize_cognitive(functions, config.cognitive_threshold),
+        cognitive=_measure_cognitive(functions, config.cognitive_threshold),
     )
     baseline = _load_baseline(repo)
     if baseline is not None:
