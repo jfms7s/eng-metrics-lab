@@ -8,6 +8,7 @@ from quality_report.complexity import (
     lizard_exclude_args,
     parse_lizard_csv,
     run_lizard,
+    summarize_cognitive,
     summarize_complexity,
     summarize_size,
 )
@@ -107,3 +108,44 @@ def test_run_tool_timeout_warns_and_returns_none(monkeypatch, capsys):
     monkeypatch.setattr(subprocess, "run", boom)
     assert run_tool(["x"], timeout=1) is None
     assert "timed out" in capsys.readouterr().err
+
+
+def test_parse_reads_start_end_and_cognitive():
+    rows = parse_lizard_csv(
+        Path("tests/fixtures/lizard-cognitive-sample.csv").read_text()
+    )
+    classify = next(r for r in rows if r.name.startswith("classify"))
+    assert (classify.start, classify.end, classify.cognitive) == (1, 36, 11)
+    assert all(r.cognitive is not None and r.end >= r.start > 0 for r in rows)
+
+
+def test_parse_without_cogc_column_leaves_cognitive_none():
+    rows = parse_lizard_csv(Path("tests/fixtures/lizard-sample.csv").read_text())
+    assert rows and all(r.cognitive is None for r in rows)
+    assert (rows[0].start, rows[0].end) == (1, 4)
+
+
+def cog_fns(*values):
+    return [
+        FunctionStat("a.ts", f"f{i}", 1, 5, cognitive=v) for i, v in enumerate(values)
+    ]
+
+
+def test_summarize_cognitive():
+    assert summarize_cognitive(cog_fns(0, 3, 11, 16, 30), 15) == {
+        "metric": "cognitive",
+        "threshold": 15,
+        "functions_over_threshold": 2,
+        "over": {"10": 3, "15": 2, "25": 1},
+        "max": 30,
+        "p95": 30,
+        "avg": 12.0,
+    }
+
+
+def test_summarize_cognitive_none_when_any_missing():
+    assert (
+        summarize_cognitive([*cog_fns(1, 2), FunctionStat("a.ts", "g", 1, 5)], 15)
+        is None
+    )
+    assert summarize_cognitive([], 15) is None

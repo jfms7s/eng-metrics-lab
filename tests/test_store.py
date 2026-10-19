@@ -16,13 +16,14 @@ def test_sample_fixture_matches_real_report_shape():
     from quality_report.ci import RunContext
     from quality_report.complexity import (
         FunctionStat,
+        summarize_cognitive,
         summarize_complexity,
         summarize_size,
     )
     from quality_report.report import build_report
 
     sample = json.loads(SAMPLE.read_text())
-    fns = [FunctionStat(name="f", file="a.py", ccn=11, nloc=3)]
+    fns = [FunctionStat(name="f", file="a.py", ccn=11, nloc=3, cognitive=4)]
     ctx = RunContext(repo="r", commit="c", branch="b", ci_system="github", run="1")
     real = build_report(
         ctx,
@@ -33,9 +34,18 @@ def test_sample_fixture_matches_real_report_shape():
         {"total": 0, "by_kind": dict.fromkeys(KINDS, 0)},
         summarize_complexity(fns, 10),
         {"result": "pass", "baseline_commit": None, "violations": []},
+        cognitive=summarize_cognitive(fns, 15),
     )
     assert set(sample) == set(real)
-    for section in ("ci", "size", "duplication", "dead_code", "complexity", "ratchet"):
+    for section in (
+        "ci",
+        "size",
+        "duplication",
+        "dead_code",
+        "complexity",
+        "cognitive",
+        "ratchet",
+    ):
         assert set(sample[section]) == set(real[section]), section
     assert set(sample["dead_code"]["by_kind"]) == set(KINDS)
     assert sample["dead_code"]["total"] == sum(sample["dead_code"]["by_kind"].values())

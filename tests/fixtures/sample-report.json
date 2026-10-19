@@ -50,6 +50,19 @@
     "p95": 12,
     "avg": 3.1
   },
+  "cognitive": {
+    "metric": "cognitive",
+    "threshold": 15,
+    "functions_over_threshold": 21,
+    "over": {
+      "10": 48,
+      "15": 21,
+      "25": 6
+    },
+    "max": 61,
+    "p95": 14,
+    "avg": 3.9
+  },
   "ratchet": {
     "result": "pass",
     "baseline_commit": "0123abc",

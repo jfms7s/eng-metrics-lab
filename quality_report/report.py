@@ -15,6 +15,7 @@ from quality_report.complexity import (
     FunctionStat,
     parse_lizard_csv,
     run_lizard,
+    summarize_cognitive,
     summarize_complexity,
     summarize_size,
 )
@@ -53,6 +54,8 @@ def build_report(
     dead_code: dict | None,
     complexity: dict | None,
     ratchet_result: dict,
+    *,
+    cognitive: dict | None = None,
 ) -> dict:
     return {
         "schema": SCHEMA_VERSION,
@@ -67,6 +70,7 @@ def build_report(
         "duplication": duplication,
         "dead_code": dead_code,
         "complexity": complexity,
+        "cognitive": cognitive,
         "ratchet": ratchet_result,
     }
 
@@ -177,6 +181,7 @@ def _run(
         _measure_dead_code(repo, config.exclude, languages),
         summarize_complexity(functions, config.complexity_threshold),
         _SKIPPED_RATCHET,
+        cognitive=summarize_cognitive(functions, config.cognitive_threshold),
     )
     baseline = _load_baseline(repo)
     if baseline is not None:
@@ -194,12 +199,14 @@ def _fmt(value: object, suffix: str = "") -> str:
 def format_summary(report: dict, functions: list[FunctionStat]) -> list[str]:
     """One summary line, then the worst functions over the threshold (highest CCN first)."""
     dup, dead, cx = report["duplication"], report["dead_code"], report["complexity"]
+    cog = report.get("cognitive")
     summary = (
         "quality: "
         f"duplication {_fmt(dup and dup['percent'], '%')}, "
         f"dead code {_fmt(dead and dead['total'])}, "
         f"functions over threshold {_fmt(cx and cx['functions_over_threshold'])}, "
         f"max CCN {_fmt(cx and cx['max'])}, "
+        f"functions over cognitive {_fmt(cog and cog['functions_over_threshold'])}, "
         f"ratchet {report['ratchet']['result']}"
     )
     lines = [summary]

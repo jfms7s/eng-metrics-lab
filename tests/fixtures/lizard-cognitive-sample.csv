@@ -1,0 +1,7 @@
+36,12,133,1,36,"classify@1-36@ts-mini/src/branchy.ts","ts-mini/src/branchy.ts","classify","classify ( n )",1,36,11
+1,1,6,0,1,"(anonymous)@2-2@ts-mini/src/a.ts","ts-mini/src/a.ts","(anonymous)","(anonymous)",2,2,0
+1,1,9,0,1,"(anonymous)@4-4@ts-mini/src/a.ts","ts-mini/src/a.ts","(anonymous)","(anonymous)",4,4,0
+1,1,11,0,1,"(anonymous)@5-5@ts-mini/src/a.ts","ts-mini/src/a.ts","(anonymous)","(anonymous)",5,5,0
+8,1,89,1,8,"summarizeA@1-8@ts-mini/src/a.ts","ts-mini/src/a.ts","summarizeA","summarizeA ( values )",1,8,0
+2,1,16,1,2,"fetch@6-7@py-mini/src/app.py","py-mini/src/app.py","fetch","fetch( url )",6,7,0
+2,1,7,1,2,"unused_helper@10-11@py-mini/src/app.py","py-mini/src/app.py","unused_helper","unused_helper( value )",10,11,0

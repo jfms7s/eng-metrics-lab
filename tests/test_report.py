@@ -47,6 +47,7 @@ def test_build_report_shape():
         "duplication",
         "dead_code",
         "complexity",
+        "cognitive",
         "ratchet",
     ]
 
@@ -120,12 +121,13 @@ def test_format_summary_lists_offenders_highest_first_capped_at_ten():
         "duplication": {"percent": 1.5},
         "dead_code": {"total": 4},
         "complexity": {"threshold": 10, "functions_over_threshold": 12, "max": 22},
+        "cognitive": {"functions_over_threshold": 3},
         "ratchet": {"result": "pass"},
     }
     lines = format_summary(report, fns)
     assert (
         lines[0]
-        == "quality: duplication 1.5%, dead code 4, functions over threshold 12, max CCN 22, ratchet pass"
+        == "quality: duplication 1.5%, dead code 4, functions over threshold 12, max CCN 22, functions over cognitive 3, ratchet pass"
     )
     assert len(lines) == 11
     assert lines[1] == "  f11.ts:fn11 22"
@@ -137,10 +139,11 @@ def test_format_summary_null_metrics_are_na():
         "duplication": None,
         "dead_code": None,
         "complexity": None,
+        "cognitive": None,
         "ratchet": SKIPPED,
     }
     assert format_summary(report, []) == [
-        "quality: duplication n/a, dead code n/a, functions over threshold n/a, max CCN n/a, ratchet skipped"
+        "quality: duplication n/a, dead code n/a, functions over threshold n/a, max CCN n/a, functions over cognitive n/a, ratchet skipped"
     ]
 
 

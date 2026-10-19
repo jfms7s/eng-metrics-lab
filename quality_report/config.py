@@ -34,6 +34,7 @@ CONFIG_FILENAME = ".quality.yml"
 class Config:
     exclude: list[str]
     complexity_threshold: int = 10
+    cognitive_threshold: int = 15
     duplication_min_tokens: int = 50
     duplication_formats: list[str] | None = None
 
@@ -52,6 +53,7 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
     known = {
         "exclude",
         "complexity_threshold",
+        "cognitive_threshold",
         "duplication_min_tokens",
         "duplication_formats",
     }
@@ -77,6 +79,9 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
         exclude=exclude,
         complexity_threshold=int(
             raw.get("complexity_threshold", defaults.complexity_threshold)
+        ),
+        cognitive_threshold=int(
+            raw.get("cognitive_threshold", defaults.cognitive_threshold)
         ),
         duplication_min_tokens=int(
             raw.get("duplication_min_tokens", defaults.duplication_min_tokens)
