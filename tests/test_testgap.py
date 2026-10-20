@@ -147,3 +147,10 @@ def test_function_in_test_file_with_data_is_not_scored():
     data = _data({"tests/test_a.py": FileCoverage(lines={1: 1, 2: 1})})
     fn = FunctionStat("tests/test_a.py", "test_a", 1, 1, start=1, end=3)
     assert score_functions([fn], data) == ([], 0, 1)
+
+
+def test_test_file_of_untested_language_is_not_counted():
+    data = _data({"src/lib.rs": FileCoverage(lines={1: 1})})
+    data.untested_languages = ["typescript"]
+    fn = FunctionStat("app/src/app.test.ts", "t", 1, 1, start=1, end=3)
+    assert score_functions([fn], data) == ([], 0, 0)

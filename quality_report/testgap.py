@@ -65,19 +65,20 @@ def score_functions(
     test file in `data.test_files`) is only counted, so test files a runner leaves
     out don't read as missing data (ruling R35). A function with no instrumented
     lines (a declaration, a type, Rust test code) is neither scored nor counted as
-    lacking data, and neither is one in a file of an untested language.
+    lacking data. A function in a file of an untested language is not counted at all.
     """
     scored: list[ScoredFunction] = []
     without_data = 0
     in_test_files = 0
     for fn in fns:
+        if language_of(fn.file) in data.untested_languages:
+            continue
         if fn.file in data.test_files or is_test_file(fn.file):
             in_test_files += 1
             continue
         file_cov = data.files.get(fn.file)
         if file_cov is None:
-            if language_of(fn.file) not in data.untested_languages:
-                without_data += 1
+            without_data += 1
             continue
         nested = [o for o in fns if _nested_in(fn, o)]
         coverage = _coverage_in_range(file_cov, fn, nested)
