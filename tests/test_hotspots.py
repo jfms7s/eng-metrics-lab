@@ -18,6 +18,7 @@ from collector.hotspots import (
     is_fix,
     measure_repo,
     parse_log,
+    production_functions,
     rank_hotspots,
     store_hotspots,
     week_of,
@@ -25,6 +26,7 @@ from collector.hotspots import (
 from collector.main import main
 from quality_report.complexity import FunctionStat
 from quality_report.config import DEFAULT_EXCLUDES
+from quality_report.rusttests import RustTestCode
 
 EXCLUDE = list(DEFAULT_EXCLUDES)
 
@@ -186,6 +188,24 @@ def test_excluded_and_deleted_paths_are_not_candidates():
     assert rows[0].score == 1.0
 
 
+def test_production_functions_drop_test_code():
+    functions = [
+        FunctionStat("src/a.ts", "a", 3, 5, 1, 5),
+        FunctionStat("src/a.test.ts", "t", 9, 5, 1, 5),
+        FunctionStat("tests/test_x.py", "t", 9, 5, 1, 5),
+        FunctionStat("src/lib.rs", "prod", 4, 5, 1, 10),
+        FunctionStat("src/lib.rs", "unit_test", 7, 5, 20, 30),
+        FunctionStat("crates/core/tests/api.rs", "it", 8, 5, 1, 9),
+    ]
+    rust = RustTestCode(
+        files={"crates/core/tests/api.rs"}, ranges={"src/lib.rs": [(15, 40)]}
+    )
+    assert [(f.file, f.name) for f in production_functions(functions, rust)] == [
+        ("src/a.ts", "a"),
+        ("src/lib.rs", "prod"),
+    ]
+
+
 def test_week_of_is_monday_utc():
     assert week_of(datetime(2026, 10, 25, 4, tzinfo=UTC)) == date(2026, 10, 19)
     assert week_of(datetime(2026, 10, 20, 9, tzinfo=UTC)) == date(2026, 10, 19)
@@ -239,9 +259,13 @@ def git_repo(tmp_path):
     (repo / "gen").mkdir()
     (repo / "gen" / "x.py").write_text(BRANCHY)
     (repo / ".quality.yml").write_text("exclude: [gen]\n")
+    (repo / "tests").mkdir()
+    # Different content: lizard skips a file identical to one it already read.
+    (repo / "tests" / "test_a.py").write_text("# test\n" + BRANCHY)
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "feat: start")
     (repo / "a.py").write_text(BRANCHY + "\n")
+    (repo / "tests" / "test_a.py").write_text("# test\n" + BRANCHY + "\n")
     _git(repo, "commit", "-q", "-am", "fix: a")
     (repo / "b.py").write_text("def g():\n    return 2\n")
     _git(repo, "commit", "-q", "-am", "chore(deps): bump", name="renovate[bot]")
@@ -251,7 +275,9 @@ def git_repo(tmp_path):
 @pytest.mark.tools
 def test_measure_repo_on_a_real_repo(git_repo):
     result = measure_repo(git_repo)
-    assert result.commits == 2  # the renovate commit is dropped
+    assert (
+        result.commits == 2
+    )  # the renovate commit is dropped; tests/ and gen/ never rank
     assert [
         (h.file, h.churn, h.fix_commits, h.complexity, h.rank) for h in result.rows
     ] == [

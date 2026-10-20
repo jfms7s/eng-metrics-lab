@@ -16,7 +16,8 @@ import yaml
 
 from quality_report.complexity import FunctionStat, parse_lizard_csv, run_lizard
 from quality_report.config import load_config
-from quality_report.detect import is_excluded
+from quality_report.detect import is_excluded, is_test_file
+from quality_report.rusttests import RustTestCode, find_rust_test_code
 
 # One record per commit: \x1e, then author name, e-mail and subject split by \x1f, then
 # `--name-only` paths. Neither separator can occur in a subject or a path git prints.
@@ -90,6 +91,22 @@ def week_of(moment: datetime) -> date:
     """The Monday of `moment`'s ISO week, the `week` a run's rows are stored under."""
     day = moment.date()
     return day - timedelta(days=day.weekday())
+
+
+def production_functions(
+    functions: list[FunctionStat], rust: RustTestCode
+) -> list[FunctionStat]:
+    """`functions` minus test code, by the report's test-gap rules (ruling H12).
+
+    Test files by their language's conventions, Rust integration-test files, and Rust
+    functions starting inside `#[cfg(test)]` code. A fix commit usually adds a test, so
+    test files would rank on the fixes themselves.
+    """
+    return [
+        f
+        for f in functions
+        if not is_test_file(f.file) and not rust.is_test_line(f.file, f.start)
+    ]
 
 
 def rank_hotspots(
@@ -222,7 +239,9 @@ def measure_repo(path: Path) -> RepoHotspots:
     csv = run_lizard(path, config.exclude)
     if csv is None:
         raise HotspotError("lizard failed")
-    functions = parse_lizard_csv(csv, path)
+    functions = production_functions(
+        parse_lizard_csv(csv, path), find_rust_test_code(path, config.exclude)
+    )
     return RepoHotspots(rank_hotspots(commits, functions, config.exclude), len(commits))
 
 
