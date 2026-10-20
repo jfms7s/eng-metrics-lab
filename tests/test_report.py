@@ -337,3 +337,78 @@ def test_run_coverage_null_without_fragment(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("PATH", "")
     assert run(repo, tmp_path / "r.json", env=CTX_ENV)["coverage"] is None
     assert "coverage-ts*.lcov" in capsys.readouterr().err
+
+
+def _py_scripts_repo(tmp_path: Path) -> Path:
+    """Manifest-less Python (helm-argo-cd's scripts/), with a valid coverage fragment."""
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "scripts" / "tool.py").write_text("def f():\n    return 1\n")
+    (repo / ".quality").mkdir()
+    (repo / ".quality" / "coverage-py.lcov").write_text(
+        "SF:scripts/tool.py\nDA:1,1\nDA:2,0\nend_of_record\n"
+    )
+    return repo
+
+
+def test_manifest_less_python_has_null_coverage_without_declaration(
+    tmp_path, monkeypatch
+):
+    repo = _py_scripts_repo(tmp_path)
+    monkeypatch.setenv("PATH", "")
+    r = run(repo, tmp_path / "r.json", env=CTX_ENV)
+    assert r["languages"] == [] and r["coverage"] is None
+    assert "declared_languages" not in r
+
+
+def test_declared_language_is_measured_and_shown(tmp_path, monkeypatch):
+    repo = _py_scripts_repo(tmp_path)
+    (repo / ".quality.yml").write_text("languages: [python]\n")
+    monkeypatch.setenv("PATH", "")
+    r = run(repo, tmp_path / "r.json", env=CTX_ENV)
+    assert r["languages"] == ["python"]
+    assert r["declared_languages"] == ["python"]
+    assert list(r).index("declared_languages") == list(r).index("languages") + 1
+    assert r["coverage"]["lines_percent"] == 50.0
+    assert r["coverage"]["languages"] == ["python"]
+
+
+def test_declared_language_adds_to_detected(tmp_path, monkeypatch, capsys):
+    repo = _py_scripts_repo(tmp_path)
+    (repo / "package.json").write_text("{}")
+    (repo / ".quality.yml").write_text(
+        "languages: [python, typescript]\ncoverage_languages: [python]\n"
+    )
+    monkeypatch.setenv("PATH", "")
+    r = run(repo, tmp_path / "r.json", env=CTX_ENV)
+    assert r["languages"] == ["python", "typescript"]
+    assert r["declared_languages"] == ["python"]
+    assert r["coverage"]["untested_languages"] == ["typescript"]
+    assert "typescript declared in .quality.yml languages but already detected" in (
+        capsys.readouterr().err
+    )
+
+
+def test_declared_language_without_fragment_nulls_coverage(tmp_path, monkeypatch):
+    repo = _py_scripts_repo(tmp_path)
+    (repo / ".quality.yml").write_text("languages: [python, go]\n")
+    monkeypatch.setenv("PATH", "")
+    r = run(repo, tmp_path / "r.json", env=CTX_ENV)
+    assert r["declared_languages"] == ["go", "python"]
+    assert r["coverage"] is None and r["dead_code"] is None
+
+
+def test_build_report_declared_languages_follow_languages():
+    r = build_report(
+        RunContext("r", "c", "main", "local", None),
+        ["python"],
+        {},
+        None,
+        None,
+        None,
+        None,
+        SKIPPED,
+        declared_languages=["python"],
+    )
+    keys = list(r)
+    assert keys[keys.index("languages") + 1] == "declared_languages"

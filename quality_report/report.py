@@ -66,7 +66,13 @@ def build_report(
     cognitive: dict | None = None,
     coverage: dict | None = None,
     test_gap: dict | None = None,
+    declared_languages: list[str] | None = None,
 ) -> dict:
+    """The report; `declared_languages` (the languages only `.quality.yml` adds) is
+    present only when the repo declares any, so other reports keep their shape."""
+    declared = (
+        {} if declared_languages is None else {"declared_languages": declared_languages}
+    )
     return {
         "schema": SCHEMA_VERSION,
         "repo": ctx.repo,
@@ -76,6 +82,7 @@ def build_report(
         "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "tools": tools,
         "languages": languages,
+        **declared,
         "size": size,
         "duplication": duplication,
         "dead_code": dead_code,
@@ -184,6 +191,27 @@ def _measure_dead_code(
     return merge_dead_code([measure(lang) for lang in languages])
 
 
+def resolve_languages(repo: Path, config: Config) -> tuple[list[str], list[str] | None]:
+    """The repo's languages and the ones only `.quality.yml` `languages` adds.
+
+    Detection is by manifest (so a stray file never makes a repo "Python"); a repo
+    whose code has no manifest, such as scripts CI runs without installing a
+    package, declares the language instead. The second value is None when nothing
+    is declared.
+    """
+    detected = detect_languages(repo, config.exclude)
+    if config.languages is None:
+        return detected, None
+    redundant = sorted(set(config.languages) & set(detected))
+    if redundant:
+        warn(
+            f"{', '.join(redundant)} declared in .quality.yml languages but already "
+            "detected from a manifest; the declaration changes nothing"
+        )
+    added = sorted(set(config.languages) - set(detected))
+    return sorted(set(detected) | set(added)), added
+
+
 def run(
     repo: Path,
     out: Path,
@@ -201,7 +229,7 @@ def _run(
     config = load_config(repo, config_path)
     ctx = resolve_context(env, repo)
     functions = _measure_complexity(repo, config.exclude)
-    languages = detect_languages(repo, config.exclude)
+    languages, declared_languages = resolve_languages(repo, config)
     coverage = load_coverage(
         repo, languages, config.coverage_languages, config.exclude, env
     )
@@ -227,6 +255,7 @@ def _run(
         cognitive=_measure_cognitive(functions, config.cognitive_threshold),
         coverage=summarize_coverage(coverage),
         test_gap=_measure_test_gap(functions, coverage),
+        declared_languages=declared_languages,
     )
     baseline = _load_baseline(repo)
     if baseline is not None:
