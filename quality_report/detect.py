@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-from fnmatch import fnmatch
-from pathlib import Path
+from fnmatch import fnmatch, fnmatchcase
+from pathlib import Path, PurePosixPath
 
 MAX_DEPTH = 3
 
@@ -30,6 +30,35 @@ _EXTENSIONS: dict[str, str] = {
 def language_of(path: str) -> str | None:
     """The language a source file belongs to, by extension; None if unknown."""
     return _EXTENSIONS.get(Path(path).suffix)
+
+
+_TEST_FILE_NAMES: dict[str, tuple[str, ...]] = {
+    "typescript": ("*.test.*", "*.spec.*"),
+    "python": ("test_*.py", "*_test.py", "conftest.py"),
+    "go": ("*_test.go",),
+}
+_TEST_DIRS: dict[str, frozenset[str]] = {
+    "typescript": frozenset({"test", "tests", "__tests__", "__mocks__"}),
+    "python": frozenset({"test", "tests"}),
+    "go": frozenset({"testdata"}),
+}
+
+
+def is_test_file(path: str) -> bool:
+    """True if a repo-relative source file is test code by its language's conventions.
+
+    A file is test code if its name follows the language's test naming (`*.test.ts`,
+    `test_*.py`, `*_test.go`, ...) or it lies under one of the language's test
+    directories (`tests/`, `__tests__/`, Go's `testdata/`). Rust is never judged by
+    path: its tests live inside source files, which `rusttests` scans.
+    """
+    language = language_of(path)
+    rel = PurePosixPath(path)
+    names = _TEST_FILE_NAMES.get(language, ())
+    dirs = _TEST_DIRS.get(language, frozenset())
+    return any(fnmatchcase(rel.name, n) for n in names) or not dirs.isdisjoint(
+        rel.parts[:-1]
+    )
 
 
 def is_excluded(rel: Path, exclude: list[str]) -> bool:
