@@ -30,7 +30,7 @@ Run weekly by the homelab collector. For each repo in `QUALITY_HOTSPOT_REPOS` (c
 
 - **churn**: non-merge commits touching the file in the last 90 days. Bot and release-automation authors are dropped; author names and e-mails are never stored or printed.
 - **fix_commits**: those commits whose subject is a Conventional Commits `fix`. Null for the whole repo when under half of its commits in the window follow Conventional Commits.
-- **complexity** and **nloc**: lizard's cyclomatic complexity and NLOC summed over the file's functions, with the same excludes as the report (defaults plus the repo's `.quality.yml`). Files lizard doesn't parse are skipped, so YAML- or HCL-only repos get no rows.
+- **complexity** and **nloc**: lizard's cyclomatic complexity and NLOC summed over the file's functions, with the same excludes as the report (defaults plus the repo's `.quality.yml`). Test code is left out by the test gap's rules (test files, Rust integration tests and `#[cfg(test)]` code): a fix usually adds a test, so test files would rank on the fixes themselves. Files lizard doesn't parse are skipped, so YAML- or HCL-only repos get no rows.
 - **score** = (churn / max churn) × (complexity / max complexity), maxima over the parsed files; **rank** orders every file with churn.
 
 Rows go to the `hotspots` table under the week's Monday (UTC), replacing that repo's rows for the week. A repo that can't be cloned or measured keeps its earlier weeks and makes the run exit 1.
