@@ -1,4 +1,5 @@
 import base64
+import os
 import subprocess
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -32,7 +33,9 @@ EXCLUDE = list(DEFAULT_EXCLUDES)
 
 
 def entry(name: str, email: str, subject: str, *files: str) -> str:
-    return f"\x1e{name}\x1f{email}\x1f{subject}\n\n" + "".join(f"{f}\n" for f in files)
+    """One commit as `git log -z --name-only --format=LOG_FORMAT` prints it."""
+    paths = "\n" + "".join(f"{f}\0" for f in files) if files else ""
+    return f"\x1e{name}\x1f{email}\x1f{subject}\0" + paths
 
 
 def fn(file: str, ccn: int, nloc: int = 10) -> FunctionStat:
@@ -76,6 +79,15 @@ def test_parse_log_keeps_separators_inside_subjects_out():
     # %s never contains \x1e or \x1f; a colon-rich subject parses whole.
     text = entry("Ana", "a@x", "fix(api): a: b: c", "a.py")
     assert parse_log(text) == [commit("fix(api): a: b: c", "a.py")]
+
+
+def test_parse_log_keeps_odd_paths_whole():
+    text = entry(
+        "Ana", "a@x", "feat: x", 'q"t.py', "a b.py", "back\\slash.py", "new\nline.py"
+    )
+    assert parse_log(text) == [
+        commit("feat: x", 'q"t.py', "a b.py", "back\\slash.py", "new\nline.py")
+    ]
 
 
 def test_parse_log_empty():
@@ -284,6 +296,35 @@ def test_measure_repo_on_a_real_repo(git_repo):
         ("a.py", 2, 1, 3, 1),
         ("b.py", 1, 0, 1, 2),
     ]
+
+
+def _repo_with_files(root: Path, names: list[bytes]) -> Path:
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    for i, name in enumerate(names):
+        with open(os.path.join(os.fsencode(root), name), "w") as fh:
+            fh.write(f"def f{i}(x):\n    if x:\n        return {i}\n    return 0\n")
+    _git(root, "add", ".")
+    _git(root, "commit", "-q", "-m", "feat: odd names")
+    return root
+
+
+@pytest.mark.tools
+def test_measure_repo_joins_odd_file_names(tmp_path):
+    # git -z prints these unquoted. (A `"` would join too on git's side, but lizard's
+    # CSV doesn't escape it, so the report's parser can't read that row either.)
+    names = [b"a b.py", b"back\\slash.py", "ünï.py".encode()]
+    repo = _repo_with_files(tmp_path / "odd", names)
+    files = {h.file for h in measure_repo(repo).rows}
+    assert files == {"a b.py", "back\\slash.py", "ünï.py"}
+
+
+@pytest.mark.tools
+def test_non_utf8_file_name_fails_only_the_repo(tmp_path):
+    # git's bytes decode leniently; lizard itself can't print such a path.
+    repo = _repo_with_files(tmp_path / "latin1", [b"caf\xe9.py", b"ok.py"])
+    with pytest.raises(HotspotError, match="lizard failed"):
+        measure_repo(repo)
 
 
 def test_measure_repo_fails_when_lizard_fails(git_repo, monkeypatch):

@@ -19,8 +19,9 @@ from quality_report.config import load_config
 from quality_report.detect import is_excluded, is_test_file
 from quality_report.rusttests import RustTestCode, find_rust_test_code
 
-# One record per commit: \x1e, then author name, e-mail and subject split by \x1f, then
-# `--name-only` paths. Neither separator can occur in a subject or a path git prints.
+# Read with `git log -z --name-only`: one record per commit, \x1e, then author name,
+# e-mail and subject split by \x1f and ended by NUL, then a newline and each path ended
+# by NUL. -z prints paths unquoted, so they match lizard's.
 LOG_FORMAT = "%x1e%an%x1f%ae%x1f%s"
 
 # Bots and release automation, matched case-insensitively in the author name or e-mail.
@@ -67,15 +68,15 @@ def _is_bot(name: str, email: str) -> bool:
 
 
 def parse_log(text: str) -> list[Commit]:
-    """Commits from `git log --name-only --format=LOG_FORMAT`, bots removed, authors dropped."""
+    """Commits from `git log -z --name-only --format=LOG_FORMAT`, bots removed, authors dropped."""
     commits: list[Commit] = []
     for record in text.split("\x1e")[1:]:
-        header, _, body = record.partition("\n")
+        header, _, body = record.partition("\0")
         name, email, subject = (header.split("\x1f", 2) + ["", ""])[:3]
         if _is_bot(name, email):
             continue
-        files = frozenset(line for line in body.splitlines() if line.strip())
-        commits.append(Commit(subject, files))
+        paths = body.removeprefix("\n").split("\0")
+        commits.append(Commit(subject, frozenset(p for p in paths if p)))
     return commits
 
 
@@ -185,7 +186,6 @@ def _git(args: list[str], *, what: str, cwd: Path | None = None, env=None) -> st
             cwd=cwd,
             env=env,
             capture_output=True,
-            text=True,
             timeout=GIT_TIMEOUT,
             check=False,
         )
@@ -195,7 +195,8 @@ def _git(args: list[str], *, what: str, cwd: Path | None = None, env=None) -> st
         raise HotspotError(f"{what} timed out after {GIT_TIMEOUT}s") from None
     if result.returncode != 0:
         raise HotspotError(f"{what} failed (exit {result.returncode})")
-    return result.stdout
+    # Git prints paths and unencoded subjects as raw bytes; one stray byte mustn't fail the repo.
+    return result.stdout.decode("utf-8", errors="replace")
 
 
 def clone(url: str, dest: Path, env: dict[str, str]) -> None:
@@ -223,9 +224,8 @@ def measure_repo(path: Path) -> RepoHotspots:
         raise HotspotError(f".quality.yml is invalid ({type(exc).__name__})") from None
     log = _git(
         [
-            "-c",
-            "core.quotePath=false",
             "log",
+            "-z",
             f"--since={CHURN_WINDOW}",
             "--no-merges",
             "--no-renames",
