@@ -41,3 +41,25 @@ def test_config_cognitive_threshold(tmp_path):
     assert load_config(tmp_path).cognitive_threshold == 15
     (tmp_path / ".quality.yml").write_text("cognitive_threshold: 20\n")
     assert load_config(tmp_path).cognitive_threshold == 20
+
+
+def test_languages_default_none_and_declared(tmp_path):
+    assert load_config(tmp_path).languages is None
+    (tmp_path / ".quality.yml").write_text("languages: [python]\n")
+    assert load_config(tmp_path).languages == ["python"]
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [("python", TypeError), ("[1]", TypeError), ("[javascript]", ValueError)],
+)
+def test_languages_must_be_known_language_names(tmp_path, value, error):
+    (tmp_path / ".quality.yml").write_text(f"languages: {value}\n")
+    with pytest.raises(error, match="languages"):
+        load_config(tmp_path)
+
+
+def test_coverage_languages_still_validated(tmp_path):
+    (tmp_path / ".quality.yml").write_text("coverage_languages: [cobol]\n")
+    with pytest.raises(ValueError, match="unknown coverage_languages: cobol"):
+        load_config(tmp_path)

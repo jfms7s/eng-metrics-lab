@@ -40,6 +40,8 @@ class Config:
     duplication_min_tokens: int = 50
     duplication_formats: list[str] | None = None
     coverage_languages: list[str] | None = None
+    languages: list[str] | None = None
+    """Languages declared in `.quality.yml`, added to the ones manifests reveal."""
 
 
 def load_config(repo: Path, path: Path | None = None) -> Config:
@@ -60,6 +62,7 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
         "duplication_min_tokens",
         "duplication_formats",
         "coverage_languages",
+        "languages",
     }
     unknown = sorted(set(raw) - known)
     if unknown:
@@ -78,20 +81,8 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
             f"{config_path}: 'duplication_formats' must be a list of strings"
         )
 
-    coverage_languages = raw.get("coverage_languages")
-    if coverage_languages is not None:
-        if not isinstance(coverage_languages, list) or not all(
-            isinstance(lang, str) for lang in coverage_languages
-        ):
-            raise TypeError(
-                f"{config_path}: 'coverage_languages' must be a list of strings"
-            )
-        bad = sorted(set(coverage_languages) - set(LANGUAGES))
-        if bad:
-            raise ValueError(
-                f"{config_path}: unknown coverage_languages: {', '.join(bad)} "
-                f"(known: {', '.join(LANGUAGES)})"
-            )
+    coverage_languages = _language_list(raw, "coverage_languages", config_path)
+    languages = _language_list(raw, "languages", config_path)
 
     defaults = Config(exclude=exclude)
     return Config(
@@ -107,4 +98,21 @@ def load_config(repo: Path, path: Path | None = None) -> Config:
         ),
         duplication_formats=formats,
         coverage_languages=coverage_languages,
+        languages=languages,
     )
+
+
+def _language_list(raw: dict, key: str, config_path: Path) -> list[str] | None:
+    """`raw[key]` as a list of known language names; None if the key is absent."""
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise TypeError(f"{config_path}: '{key}' must be a list of strings")
+    bad = sorted(set(value) - set(LANGUAGES))
+    if bad:
+        raise ValueError(
+            f"{config_path}: unknown {key}: {', '.join(bad)} "
+            f"(known: {', '.join(LANGUAGES)})"
+        )
+    return value

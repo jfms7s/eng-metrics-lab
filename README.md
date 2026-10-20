@@ -10,6 +10,11 @@ Since 0.3.0 it also reports:
 - **`details.json`**: the per-function detail behind those numbers.
 - **`quality-report feedback`**: an advisory summary of what a change made worse; it always exits 0.
 
+Since 0.3.1:
+
+- **Rust coverage is production code only.** Lines inside `#[cfg(test)]` items and test functions (`#[test]`, `#[tokio::test]`, ...), modules declared from test code, and files under a crate's `tests/` are left out of coverage and the test gap. `coverage.test_lines_excluded` says how many instrumented lines that removed.
+- **`.quality.yml` `languages:`** adds languages that no manifest reveals (scripts CI runs without a `pyproject.toml` or `package.json`), for example `languages: [python]`. The report lists them in `declared_languages`.
+
 ## Tests
 
 ```bash

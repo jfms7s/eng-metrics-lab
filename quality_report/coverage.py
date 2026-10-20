@@ -3,6 +3,8 @@
 Each language's fragments are parsed, their paths normalised to repo-relative files,
 and merged by max hits. Coverage is None (with a warning) unless every expected
 language has a usable fragment with at least one instrumented line naming a repo file.
+Rust test code (`#[cfg(test)]` items, `#[test]` functions, `tests/`) is left out, so
+the total is over production code only.
 """
 
 from __future__ import annotations
@@ -14,7 +16,8 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from quality_report.detect import is_excluded
+from quality_report.detect import is_excluded, language_of
+from quality_report.rusttests import find_rust_test_code
 from quality_report.tools import warn
 
 FRAGMENT_DIR = ".quality"
@@ -41,6 +44,10 @@ class CoverageData:
     untested_languages: list[str]
     branch_languages: list[str]
     unmatched_files: int
+    test_files: set[str] = field(default_factory=set)
+    """Files that are test code: their functions are neither scored nor counted."""
+    test_lines_excluded: int | None = None
+    """Instrumented Rust lines left out as test code; None when Rust is not covered."""
 
 
 def _merge_max(into: dict, hits: Mapping) -> None:
@@ -370,6 +377,11 @@ def load_coverage(
         if not matched_lines:
             silent.append(language)
 
+    test_files: set[str] = set()
+    test_lines_excluded = None
+    if "rust" in covered:
+        test_files, test_lines_excluded = _drop_rust_test_code(files, repo, exclude)
+
     if unmatched:
         warn(
             f"{len(unmatched)} coverage file(s) name no file in the repo; "
@@ -394,7 +406,38 @@ def load_coverage(
             if any(cov.branches for cov in data.values())
         ],
         unmatched_files=len(unmatched),
+        test_files=test_files,
+        test_lines_excluded=test_lines_excluded,
     )
+
+
+def _drop_rust_test_code(
+    files: dict[str, FileCoverage], repo: Path, exclude: list[str]
+) -> tuple[set[str], int]:
+    """Remove Rust test code from `files` in place (ruling R35).
+
+    Test files go entirely; test lines (and the branches on them) go from the other
+    Rust files. Returns the test files found in the repo and the instrumented lines
+    removed.
+    """
+    test_code = find_rust_test_code(repo, exclude)
+    removed = 0
+    for path in [p for p in files if language_of(p) == "rust"]:
+        cov = files[path]
+        if path in test_code.files:
+            removed += len(cov.lines)
+            del files[path]
+            continue
+        test_lines = {n for n in cov.lines if test_code.is_test_line(path, n)}
+        removed += len(test_lines)
+        cov.lines = {n: h for n, h in cov.lines.items() if n not in test_lines}
+        test_line_keys = {str(n) for n in test_lines}
+        cov.branches = {
+            key: hits
+            for key, hits in cov.branches.items()
+            if key.split(",", 1)[0].strip() not in test_line_keys
+        }
+    return test_code.files, removed
 
 
 def _percent(part: int, whole: int) -> float | None:
@@ -413,7 +456,7 @@ def summarize_coverage(data: CoverageData | None) -> dict | None:
         if data.branch_languages
         else None
     )
-    return {
+    block = {
         "lines_percent": _percent(lines_covered, len(lines)),
         "lines_covered": lines_covered,
         "lines_total": len(lines),
@@ -423,3 +466,6 @@ def summarize_coverage(data: CoverageData | None) -> dict | None:
         "untested_languages": data.untested_languages,
         "unmatched_files": data.unmatched_files,
     }
+    if data.test_lines_excluded is not None:
+        block["test_lines_excluded"] = data.test_lines_excluded
+    return block
