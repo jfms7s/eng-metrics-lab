@@ -1,12 +1,14 @@
-"""quality-collector: load quality-report artifacts from GitHub into Postgres."""
+"""quality-collector: load quality-report artifacts from GitHub into Postgres, and weekly hotspots."""
 
 from __future__ import annotations
 
 import argparse
 import os
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import psycopg
 import requests
@@ -17,6 +19,15 @@ from collector.github import (
     download_report,
     list_report_artifacts,
     new_session,
+)
+from collector.hotspots import (
+    HotspotError,
+    RepoHotspots,
+    clone,
+    git_env,
+    measure_repo,
+    store_hotspots,
+    week_of,
 )
 from collector.migrate import migrate
 from quality_report.store import connect, insert_report
@@ -128,9 +139,7 @@ def _cmd_collect(_args: argparse.Namespace) -> int:
     if missing:
         print(f"error: {missing} is not set", file=sys.stderr)
         return 2
-    repos = [
-        r.strip() for r in os.environ["QUALITY_GITHUB_REPOS"].split(",") if r.strip()
-    ]
+    repos = _repo_list("QUALITY_GITHUB_REPOS")
     if not repos:
         print("error: QUALITY_GITHUB_REPOS names no repositories", file=sys.stderr)
         return 2
@@ -155,6 +164,71 @@ def _cmd_collect(_args: argparse.Namespace) -> int:
                     continue
                 if stats.failed:
                     exit_code = 1
+    except psycopg.Error as exc:
+        print(f"error: database error: {_db_error(exc)}", file=sys.stderr)
+        return 1
+    return exit_code
+
+
+def _repo_list(variable: str) -> list[str]:
+    return [r.strip() for r in os.environ[variable].split(",") if r.strip()]
+
+
+def _hotspots_line(repo: str, week, result: RepoHotspots) -> str:
+    if not result.rows:
+        fixes = "-"
+    elif result.rows[0].fix_commits is None:
+        fixes = "null"
+    else:
+        fixes = "counted"
+    return (
+        f"{repo} week={week} commits={result.commits} "
+        f"files={len(result.rows)} fix_commits={fixes}"
+    )
+
+
+def _cmd_hotspots(_args: argparse.Namespace) -> int:
+    missing = _missing(
+        [
+            "QUALITY_COLLECTOR_URL",
+            "GITHUB_TOKEN",
+            "QUALITY_GITHUB_OWNER",
+            "QUALITY_HOTSPOT_REPOS",
+        ]
+    )
+    if missing:
+        print(f"error: {missing} is not set", file=sys.stderr)
+        return 2
+    repos = _repo_list("QUALITY_HOTSPOT_REPOS")
+    if not repos:
+        print("error: QUALITY_HOTSPOT_REPOS names no repositories", file=sys.stderr)
+        return 2
+    owner = os.environ["QUALITY_GITHUB_OWNER"]
+    env = git_env(os.environ["GITHUB_TOKEN"])
+    week = week_of(datetime.now(UTC))
+
+    exit_code = 0
+    try:
+        with connect(os.environ["QUALITY_COLLECTOR_URL"]) as conn:
+            for repo in repos:
+                # One clone at a time, deleted before the next (node disk is tight).
+                with tempfile.TemporaryDirectory(prefix="hotspots-") as tmp:
+                    path = Path(tmp) / repo
+                    try:
+                        clone(f"https://github.com/{owner}/{repo}.git", path, env)
+                        result = measure_repo(path)
+                        store_hotspots(conn, repo, week, result.rows)
+                    except HotspotError as exc:
+                        print(f"error: {repo}: {exc}", file=sys.stderr)
+                        exit_code = 1
+                        continue
+                    except psycopg.OperationalError:
+                        raise
+                    except psycopg.Error as exc:
+                        print(f"error: {repo}: {_db_error(exc)}", file=sys.stderr)
+                        exit_code = 1
+                        continue
+                print(_hotspots_line(repo, week, result))
     except psycopg.Error as exc:
         print(f"error: database error: {_db_error(exc)}", file=sys.stderr)
         return 1
@@ -193,6 +267,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("collect", help="load recent quality-report artifacts").set_defaults(
         func=_cmd_collect
     )
+    sub.add_parser(
+        "hotspots", help="store this week's churn × complexity per file"
+    ).set_defaults(func=_cmd_hotspots)
     sub.add_parser("migrate", help="create the schema and roles").set_defaults(
         func=_cmd_migrate
     )

@@ -18,8 +18,15 @@ def run_tool(
     """
     name = args[0]
     try:
+        # errors="replace": a tool printing a non-UTF-8 path mustn't crash the caller.
         return subprocess.run(
-            args, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False
+            args,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=timeout,
+            check=False,
         )
     except FileNotFoundError:
         warn(f"{name} not found; skipped")
