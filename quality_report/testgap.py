@@ -60,12 +60,15 @@ def score_functions(
 ) -> tuple[list[ScoredFunction], int]:
     """Score each function; the int counts functions whose file has no coverage data.
 
-    A function with no instrumented lines (a declaration, a type) is neither scored
-    nor counted as lacking data, and neither is one in a file of an untested language.
+    A function with no instrumented lines (a declaration, a type, Rust test code) is
+    neither scored nor counted as lacking data, and neither is one in a file of an
+    untested language or in a test file (`data.test_files`).
     """
     scored: list[ScoredFunction] = []
     without_data = 0
     for fn in fns:
+        if fn.file in data.test_files:
+            continue
         file_cov = data.files.get(fn.file)
         if file_cov is None:
             if language_of(fn.file) not in data.untested_languages:

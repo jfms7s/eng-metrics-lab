@@ -490,3 +490,81 @@ def test_config_coverage_languages_must_be_list(tmp_path):
     (tmp_path / ".quality.yml").write_text("coverage_languages: typescript\n")
     with pytest.raises(TypeError, match="coverage_languages"):
         load_config(tmp_path)
+
+
+# --- Rust test code (ruling R35) ---
+
+_RUST_LIB = (
+    "pub fn p(x: u8) -> u8 {\n"  # 1
+    "    x + 1\n"
+    "}\n"
+    "#[cfg(test)]\n"  # 4
+    "mod tests {\n"
+    "    #[test]\n"
+    "    fn t() {\n"
+    "        assert_eq!(super::p(1), 2);\n"
+    "    }\n"
+    "}\n"  # 10
+)
+
+
+def _rust_repo(repo: Path) -> None:
+    (repo / "Cargo.toml").write_text("[package]\n")
+    (repo / "src" / "lib.rs").write_text(_RUST_LIB)
+    (repo / "tests").mkdir()
+    (repo / "tests" / "it.rs").write_text("#[test]\nfn it() {}\n")
+
+
+def test_rust_test_code_is_left_out_of_coverage(repo):
+    _rust_repo(repo)
+    lines = {1: 1, 2: 1, 3: 0, 7: 1, 8: 1, 9: 1}
+    _fragment(
+        repo,
+        "coverage-rust.lcov",
+        _lcov("src/lib.rs", lines, ["2,0,0,1", "8,0,0,1"])
+        + _lcov("tests/it.rs", {2: 1}),
+    )
+    data = load_coverage(repo, ["rust"], None, EXCLUDE, NO_ENV)
+    assert set(data.files) == {"src/lib.rs"}
+    assert data.files["src/lib.rs"].lines == {1: 1, 2: 1, 3: 0}
+    assert list(data.files["src/lib.rs"].branches) == ["2,0,0"]
+    assert data.test_files == {"tests/it.rs"}
+    assert data.test_lines_excluded == 4
+    block = summarize_coverage(data)
+    assert block["lines_total"] == 3
+    assert block["lines_percent"] == 66.67
+    assert block["test_lines_excluded"] == 4
+
+
+def test_rust_test_code_scan_leaves_other_languages_alone(repo):
+    _rust_repo(repo)
+    _fragment(repo, "coverage-ts.lcov", _lcov("src/a.ts", {1: 1, 2: 0}))
+    _fragment(repo, "coverage-rust.lcov", _lcov("src/lib.rs", {2: 1, 8: 1}))
+    data = load_coverage(repo, ["rust", "typescript"], None, EXCLUDE, NO_ENV)
+    assert data.files["src/a.ts"].lines == {1: 1, 2: 0}
+    assert summarize_coverage(data)["lines_total"] == 3
+
+
+def test_rust_fragment_of_only_test_code_is_not_null(repo):
+    """A valid fragment whose lines are all test code is a real (empty) measure."""
+    _rust_repo(repo)
+    _fragment(repo, "coverage-rust.lcov", _lcov("src/lib.rs", {8: 1}))
+    block = summarize_coverage(load_coverage(repo, ["rust"], None, EXCLUDE, NO_ENV))
+    assert block["lines_total"] == 0
+    assert block["lines_percent"] is None
+    assert block["test_lines_excluded"] == 1
+
+
+def test_no_test_lines_key_without_rust(repo):
+    _fragment(repo, "coverage-ts.lcov", _lcov("src/a.ts", {1: 1}))
+    data = load_coverage(repo, ["typescript"], None, EXCLUDE, NO_ENV)
+    assert data.test_lines_excluded is None
+    assert "test_lines_excluded" not in summarize_coverage(data)
+
+
+def test_untested_rust_is_not_scanned(repo):
+    _rust_repo(repo)
+    _fragment(repo, "coverage-ts.lcov", _lcov("src/a.ts", {1: 1}))
+    data = load_coverage(repo, ["rust", "typescript"], ["typescript"], EXCLUDE, NO_ENV)
+    assert data.test_files == set()
+    assert "test_lines_excluded" not in summarize_coverage(data)

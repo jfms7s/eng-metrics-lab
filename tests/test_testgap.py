@@ -105,3 +105,20 @@ def test_measure_test_gap_warns_when_nothing_scored(capsys):
     assert "quality-report: warning:" in err and "2 functions have no coverage" in err
     assert _measure_test_gap([], data) is None
     assert capsys.readouterr().err == ""
+
+
+def test_function_in_test_file_is_neither_scored_nor_counted():
+    data = _data({"src/lib.rs": FileCoverage(lines={10: 1})})
+    data.test_files = {"tests/it.rs"}
+    it = FunctionStat("tests/it.rs", "it", 1, 1, start=1, end=3)
+    assert score_functions([it], data) == ([], 0)
+
+
+def test_function_inside_dropped_rust_test_lines_is_skipped():
+    # src/lib.rs lines 4..10 were test code and are already gone from the data.
+    data = _data({"src/lib.rs": FileCoverage(lines={1: 1, 2: 1})})
+    prod = FunctionStat("src/lib.rs", "p", 1, 1, start=1, end=3)
+    test = FunctionStat("src/lib.rs", "tests::t", 1, 1, start=7, end=9)
+    scored, without = score_functions([prod, test], data)
+    assert [s.name for s in scored] == ["p"]
+    assert without == 0
