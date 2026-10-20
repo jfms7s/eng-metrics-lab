@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quality-report"
-version = "0.3.1"
+version = "0.3.2"
 description = "Measure duplication, dead code, cyclomatic and cognitive complexity, test coverage and test gaps in CI"
 readme = "README.md"
 requires-python = ">=3.11"
