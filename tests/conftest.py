@@ -75,3 +75,9 @@ def writer_conn(admin_url, passwords):
 def grafana_conn(admin_url, passwords):
     with _role_conn(admin_url, _ROLES["grafana"], passwords["grafana"]) as conn:
         yield conn
+
+
+@pytest.fixture(scope="session")
+def collector_conn(admin_url, passwords):
+    with _role_conn(admin_url, _ROLES["collector"], passwords["collector"]) as conn:
+        yield conn

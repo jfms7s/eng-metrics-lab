@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+import os
 import re
+import subprocess
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
-from quality_report.complexity import FunctionStat
+import psycopg
+import yaml
+
+from quality_report.complexity import FunctionStat, parse_lizard_csv, run_lizard
+from quality_report.config import load_config
 from quality_report.detect import is_excluded
 
 # One record per commit: \x1e, then author name, e-mail and subject split by \x1f, then
@@ -26,8 +33,14 @@ _BOT_MARKERS = (
 )
 _CONVENTIONAL = re.compile(r"^[a-z]+(\([^)]*\))?!?: ")
 _FIX = re.compile(r"^fix(\([^)]*\))?!?: ")
+CHURN_WINDOW = "90.days"
+GIT_TIMEOUT = 300
 # Below this share of Conventional Commits, fix_commits is null for the repo (decision D6).
 MIN_CONVENTIONAL_SHARE = 0.5
+
+
+class HotspotError(Exception):
+    """A repo whose hotspots can't be computed; the message is safe to log."""
 
 
 @dataclass(frozen=True)
@@ -126,3 +139,125 @@ def rank_hotspots(
     for rank, row in enumerate(rows, start=1):
         row.rank = rank
     return rows
+
+
+@dataclass
+class RepoHotspots:
+    rows: list[FileHotspot]
+    commits: int
+    """Non-bot commits in the churn window."""
+
+
+def git_env(token: str) -> dict[str, str]:
+    """Environment for git that authenticates to github.com without the token in argv or a URL."""
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    return {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+        "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {basic}",
+    }
+
+
+def _git(args: list[str], *, what: str, cwd: Path | None = None, env=None) -> str:
+    """Run git; HotspotError naming only `what` and the exit code (stderr may echo URLs)."""
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            check=False,
+        )
+    except FileNotFoundError:
+        raise HotspotError("git not found") from None
+    except subprocess.TimeoutExpired:
+        raise HotspotError(f"{what} timed out after {GIT_TIMEOUT}s") from None
+    if result.returncode != 0:
+        raise HotspotError(f"{what} failed (exit {result.returncode})")
+    return result.stdout
+
+
+def clone(url: str, dest: Path, env: dict[str, str]) -> None:
+    """Blob-less clone of the default branch: full history, blobs fetched for HEAD only."""
+    _git(
+        [
+            "clone",
+            "--quiet",
+            "--filter=blob:none",
+            "--single-branch",
+            "--no-tags",
+            url,
+            str(dest),
+        ],
+        what="git clone",
+        env=env,
+    )
+
+
+def measure_repo(path: Path) -> RepoHotspots:
+    """Hotspots of the checkout at `path`; HotspotError when git, lizard or `.quality.yml` fails."""
+    try:
+        config = load_config(path)
+    except (ValueError, TypeError, yaml.YAMLError) as exc:
+        raise HotspotError(f".quality.yml is invalid ({type(exc).__name__})") from None
+    log = _git(
+        [
+            "-c",
+            "core.quotePath=false",
+            "log",
+            f"--since={CHURN_WINDOW}",
+            "--no-merges",
+            "--no-renames",
+            "--name-only",
+            f"--format={LOG_FORMAT}",
+        ],
+        what="git log",
+        cwd=path,
+    )
+    commits = parse_log(log)
+    csv = run_lizard(path, config.exclude)
+    if csv is None:
+        raise HotspotError("lizard failed")
+    functions = parse_lizard_csv(csv, path)
+    return RepoHotspots(rank_hotspots(commits, functions, config.exclude), len(commits))
+
+
+_DELETE = "delete from hotspots where repo = %s and week = %s"
+_INSERT = (
+    "insert into hotspots (repo, week, file, churn, fix_commits, complexity, nloc, score, rank)"
+    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+)
+
+
+def store_hotspots(
+    conn: psycopg.Connection, repo: str, week: date, rows: list[FileHotspot]
+) -> None:
+    """Replace `repo`'s rows for `week` with `rows`: committed together, or rolled back."""
+    try:
+        conn.execute(_DELETE, (repo, week))
+        with conn.cursor() as cur:
+            cur.executemany(
+                _INSERT,
+                [
+                    (
+                        repo,
+                        week,
+                        h.file,
+                        h.churn,
+                        h.fix_commits,
+                        h.complexity,
+                        h.nloc,
+                        h.score,
+                        h.rank,
+                    )
+                    for h in rows
+                ],
+            )
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
