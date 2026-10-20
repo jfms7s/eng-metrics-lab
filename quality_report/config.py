@@ -26,6 +26,13 @@ DEFAULT_EXCLUDES: tuple[str, ...] = (
     "go.sum",
     "**/migrations/**",
     "**/__snapshots__/**",
+    # Generated protobuf/gRPC code, by the generators' own file names (ruling R35).
+    "*.pb.go",
+    "*.pb.gw.go",
+    "*_pb.ts",
+    "*_pb.js",
+    "*_pb2.py",
+    "*_pb2_grpc.py",
     ".quality",
 )
 
