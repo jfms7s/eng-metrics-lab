@@ -320,11 +320,12 @@ def test_measure_repo_joins_odd_file_names(tmp_path):
 
 
 @pytest.mark.tools
-def test_non_utf8_file_name_fails_only_the_repo(tmp_path):
-    # git's bytes decode leniently; lizard itself can't print such a path.
+def test_non_utf8_file_name_leaves_the_rest_of_the_repo(tmp_path, monkeypatch):
+    # The image runs lizard in Python's UTF-8 mode, which prints the raw byte; git and
+    # lizard output both decode leniently, so only the odd file fails to join.
+    monkeypatch.setenv("PYTHONUTF8", "1")
     repo = _repo_with_files(tmp_path / "latin1", [b"caf\xe9.py", b"ok.py"])
-    with pytest.raises(HotspotError, match="lizard failed"):
-        measure_repo(repo)
+    assert "ok.py" in {h.file for h in measure_repo(repo).rows}
 
 
 def test_measure_repo_fails_when_lizard_fails(git_repo, monkeypatch):
