@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from quality_report.complexity import FunctionStat
 from quality_report.coverage import CoverageData, FileCoverage
-from quality_report.detect import language_of
+from quality_report.detect import is_test_file, language_of
 
 CRAP_THRESHOLD = 30
 
@@ -57,22 +57,28 @@ def _coverage_in_range(
 
 def score_functions(
     fns: list[FunctionStat], data: CoverageData
-) -> tuple[list[ScoredFunction], int]:
-    """Score each function; the int counts functions whose file has no coverage data.
+) -> tuple[list[ScoredFunction], int, int]:
+    """Score each function; the ints count functions whose file has no coverage data
+    and functions in test files.
 
-    A function with no instrumented lines (a declaration, a type, Rust test code) is
-    neither scored nor counted as lacking data, and neither is one in a file of an
-    untested language or in a test file (`data.test_files`).
+    Test code is not scored: a function in a test file (`is_test_file`, or a Rust
+    test file in `data.test_files`) is only counted, so test files a runner leaves
+    out don't read as missing data (ruling R35). A function with no instrumented
+    lines (a declaration, a type, Rust test code) is neither scored nor counted as
+    lacking data. A function in a file of an untested language is not counted at all.
     """
     scored: list[ScoredFunction] = []
     without_data = 0
+    in_test_files = 0
     for fn in fns:
-        if fn.file in data.test_files:
+        if language_of(fn.file) in data.untested_languages:
+            continue
+        if fn.file in data.test_files or is_test_file(fn.file):
+            in_test_files += 1
             continue
         file_cov = data.files.get(fn.file)
         if file_cov is None:
-            if language_of(fn.file) not in data.untested_languages:
-                without_data += 1
+            without_data += 1
             continue
         nested = [o for o in fns if _nested_in(fn, o)]
         coverage = _coverage_in_range(file_cov, fn, nested)
@@ -81,10 +87,12 @@ def score_functions(
             scored.append(
                 ScoredFunction(fn.file, fn.name, fn.start, fn.ccn, coverage, score)
             )
-    return scored, without_data
+    return scored, without_data, in_test_files
 
 
-def summarize_test_gap(scored: list[ScoredFunction], without_data: int) -> dict | None:
+def summarize_test_gap(
+    scored: list[ScoredFunction], without_data: int, in_test_files: int
+) -> dict | None:
     """The report's `test_gap` block; None when no function could be scored."""
     if not scored:
         return None
@@ -95,4 +103,5 @@ def summarize_test_gap(scored: list[ScoredFunction], without_data: int) -> dict 
         "max": max(s.crap for s in scored),
         "functions_scored": len(scored),
         "functions_without_data": without_data,
+        "functions_in_test_files": in_test_files,
     }

@@ -34,19 +34,19 @@ def test_score_uses_lines_inside_function_range():
     lines |= {n: 0 for n in range(15, 20)}
     lines |= {5: 0, 6: 0, 25: 1}  # outside the function
     data = _data({"a.py": FileCoverage(lines=lines)})
-    scored, without = score_functions([_fn()], data)
-    assert without == 0
+    scored, without, in_tests = score_functions([_fn()], data)
+    assert (without, in_tests) == (0, 0)
     assert scored == [ScoredFunction("a.py", "f", 10, 10, 0.5, 22.5)]
 
 
 def test_function_without_instrumented_lines_is_skipped():
     data = _data({"a.py": FileCoverage(lines={1: 1, 50: 0})})
-    assert score_functions([_fn()], data) == ([], 0)
+    assert score_functions([_fn()], data) == ([], 0, 0)
 
 
 def test_function_in_file_without_data_is_counted_not_scored():
     data = _data({"b.py": FileCoverage(lines={10: 1})})
-    assert score_functions([_fn()], data) == ([], 1)
+    assert score_functions([_fn()], data) == ([], 1, 0)
 
 
 def test_nested_function_lines_excluded_from_outer():
@@ -54,7 +54,7 @@ def test_nested_function_lines_excluded_from_outer():
     data = _data({"a.py": FileCoverage(lines=lines)})
     outer = FunctionStat("a.py", "outer", 11, 20, start=1, end=20)
     inner = FunctionStat("a.py", "outer.inner", 3, 11, start=5, end=15)
-    scored, without = score_functions([outer, inner], data)
+    scored, without, _ = score_functions([outer, inner], data)
     assert without == 0
     by_name = {s.name: s for s in scored}
     assert by_name["outer"].coverage == 1.0
@@ -67,24 +67,25 @@ def test_function_of_untested_language_is_not_counted():
     data.untested_languages = ["rust"]
     rust = FunctionStat("src/lib.rs", "g", 4, 9, start=1, end=9)
     py_missing = FunctionStat("b.py", "h", 4, 9, start=1, end=9)
-    assert score_functions([rust], data) == ([], 0)
-    assert score_functions([rust, py_missing], data) == ([], 1)
+    assert score_functions([rust], data) == ([], 0, 0)
+    assert score_functions([rust, py_missing], data) == ([], 1, 0)
 
 
 def test_summarize_test_gap():
     scored = [ScoredFunction("a.py", "f", 1, 5, 0.5, c) for c in (2.0, 31.0, 110.0)]
-    assert summarize_test_gap(scored, 0) == {
+    assert summarize_test_gap(scored, 0, 4) == {
         "metric": "crap",
         "threshold": 30,
         "functions_over_threshold": 2,
         "max": 110.0,
         "functions_scored": 3,
         "functions_without_data": 0,
+        "functions_in_test_files": 4,
     }
 
 
 def test_summarize_test_gap_none_when_nothing_scored():
-    assert summarize_test_gap([], 3) is None
+    assert summarize_test_gap([], 3, 2) is None
 
 
 def test_test_gap_null_when_coverage_null(tmp_path, monkeypatch):
@@ -103,15 +104,16 @@ def test_measure_test_gap_warns_when_nothing_scored(capsys):
     assert _measure_test_gap([_fn(), _fn()], data) is None
     err = capsys.readouterr().err
     assert "quality-report: warning:" in err and "2 functions have no coverage" in err
+    assert "0 are in test files" in err
     assert _measure_test_gap([], data) is None
     assert capsys.readouterr().err == ""
 
 
-def test_function_in_test_file_is_neither_scored_nor_counted():
+def test_function_in_rust_test_file_is_counted_apart():
     data = _data({"src/lib.rs": FileCoverage(lines={10: 1})})
     data.test_files = {"tests/it.rs"}
     it = FunctionStat("tests/it.rs", "it", 1, 1, start=1, end=3)
-    assert score_functions([it], data) == ([], 0)
+    assert score_functions([it], data) == ([], 0, 1)
 
 
 def test_function_inside_dropped_rust_test_lines_is_skipped():
@@ -119,6 +121,36 @@ def test_function_inside_dropped_rust_test_lines_is_skipped():
     data = _data({"src/lib.rs": FileCoverage(lines={1: 1, 2: 1})})
     prod = FunctionStat("src/lib.rs", "p", 1, 1, start=1, end=3)
     test = FunctionStat("src/lib.rs", "tests::t", 1, 1, start=7, end=9)
-    scored, without = score_functions([prod, test], data)
+    scored, without, in_tests = score_functions([prod, test], data)
     assert [s.name for s in scored] == ["p"]
-    assert without == 0
+    assert (without, in_tests) == (0, 0)
+
+
+def test_functions_in_test_files_are_counted_apart_for_every_language():
+    data = _data({"src/app.py": FileCoverage(lines={1: 1})})
+    data.languages = ["go", "python", "typescript"]
+    tests = [
+        FunctionStat(f, "t", 1, 1, start=1, end=3)
+        for f in (
+            "scripts/tests/test_render.py",
+            "src/app.test.ts",
+            "src/__tests__/util.ts",
+            "server/api/handler_test.go",
+        )
+    ]
+    missing = FunctionStat("src/other.py", "g", 1, 1, start=1, end=3)
+    assert score_functions([*tests, missing], data) == ([], 1, 4)
+
+
+def test_function_in_test_file_with_data_is_not_scored():
+    # A runner that also measures its tests (pytest --cov=.) gives test files data.
+    data = _data({"tests/test_a.py": FileCoverage(lines={1: 1, 2: 1})})
+    fn = FunctionStat("tests/test_a.py", "test_a", 1, 1, start=1, end=3)
+    assert score_functions([fn], data) == ([], 0, 1)
+
+
+def test_test_file_of_untested_language_is_not_counted():
+    data = _data({"src/lib.rs": FileCoverage(lines={1: 1})})
+    data.untested_languages = ["typescript"]
+    fn = FunctionStat("app/src/app.test.ts", "t", 1, 1, start=1, end=3)
+    assert score_functions([fn], data) == ([], 0, 0)

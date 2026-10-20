@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import pytest
 
 from quality_report.config import DEFAULT_EXCLUDES, load_config
+from quality_report.detect import is_excluded
 
 
 def test_load_config_defaults_when_no_file(tmp_path):
@@ -63,3 +66,34 @@ def test_coverage_languages_still_validated(tmp_path):
     (tmp_path / ".quality.yml").write_text("coverage_languages: [cobol]\n")
     with pytest.raises(ValueError, match="unknown coverage_languages: cobol"):
         load_config(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "server/internal/gen/obsync/v1/obsync.pb.go",
+        "api/v1/service_grpc.pb.go",
+        "api/v1/service.pb.gw.go",
+        "plugin/src/gen/obsync/v1/obsync_pb.ts",
+        "web/src/proto/user_pb.js",
+        "app/proto/user_pb2.py",
+        "app/proto/user_pb2_grpc.py",
+    ],
+)
+def test_default_excludes_cover_protobuf_output(path):
+    assert is_excluded(Path(path), list(DEFAULT_EXCLUDES))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # Hand-written code beside generated code, and directories merely named gen.
+        "server/internal/gen/obsync/v1/roundtrip_test.go",
+        "cmd/gen/main.go",
+        "src/pb.ts",
+        "src/pub.go",
+        "app/proto/client.py",
+    ],
+)
+def test_default_excludes_keep_hand_written_code(path):
+    assert not is_excluded(Path(path), list(DEFAULT_EXCLUDES))

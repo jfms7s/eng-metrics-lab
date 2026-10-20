@@ -15,6 +15,11 @@ Since 0.3.1:
 - **Rust coverage is production code only.** Lines inside `#[cfg(test)]` items and test functions (`#[test]`, `#[tokio::test]`, ...), modules declared from test code, and files under a crate's `tests/` are left out of coverage and the test gap. `coverage.test_lines_excluded` says how many instrumented lines that removed.
 - **`.quality.yml` `languages:`** adds languages that no manifest reveals (scripts CI runs without a `pyproject.toml` or `package.json`), for example `languages: [python]`. The report lists them in `declared_languages`.
 
+Since 0.3.2:
+
+- **Test files are left out of the test gap for every language.** Functions in test files are not scored, and they no longer count as lacking coverage data, so a runner that leaves its tests out (vitest, pytest with `--cov=src`) doesn't look misconfigured. `test_gap.functions_in_test_files` counts them. A test file is one named like a test (`*.test.*` and `*.spec.*` for JS/TS, `test_*.py`, `*_test.py` and `conftest.py`, `*_test.go`) or under a test directory (`test/`, `tests/`, `__tests__/` and `__mocks__/` for JS/TS, `test/` and `tests/` for Python, `testdata/` for Go). Rust test code is still found by the 0.3.1 source scan.
+- **Generated protobuf code is excluded by default**, by its generators' file names: `*.pb.go`, `*.pb.gw.go`, `*_pb.ts`, `*_pb.js`, `*_pb2.py`, `*_pb2_grpc.py`. Other generated code (a `gen/` directory, say) goes in the repo's `.quality.yml` `exclude`.
+
 ## Tests
 
 ```bash

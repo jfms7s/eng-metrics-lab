@@ -97,6 +97,29 @@ def test_run_lizard_honours_excludes(tmp_path):
     assert [f.file for f in parse_lizard_csv(out, tmp_path)] == ["src/a.ts"]
 
 
+@pytest.mark.tools
+@pytest.mark.skipif(shutil.which("lizard") is None, reason="lizard not installed")
+def test_run_lizard_skips_generated_protobuf_code(tmp_path):
+    from quality_report.config import DEFAULT_EXCLUDES
+
+    files = {
+        "server/api.go": "package api\nfunc A(x int) int { if x > 0 { return 1 }; return 2 }\n",
+        "server/gen/v1/api.pb.go": "package v1\nfunc B(x int) int { if x > 0 { return 3 }; return 4 }\n",
+        "app/svc.py": "def c(x):\n    if x:\n        return 5\n    return 6\n",
+        "app/svc_pb2.py": "def d(x):\n    if x:\n        return 7\n    return 8\n",
+        "web/src/gen/svc_pb.ts": "function e(x) { if (x) { return 9 } return 10 }\n",
+    }
+    for rel, body in files.items():
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body)
+    out = run_lizard(tmp_path, list(DEFAULT_EXCLUDES))
+    assert sorted(f.file for f in parse_lizard_csv(out, tmp_path)) == [
+        "app/svc.py",
+        "server/api.go",
+    ]
+
+
 def test_run_tool_timeout_warns_and_returns_none(monkeypatch, capsys):
     import subprocess
 

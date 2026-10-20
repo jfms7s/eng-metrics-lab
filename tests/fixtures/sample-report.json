@@ -84,7 +84,8 @@
     "functions_over_threshold": 12,
     "max": 210.5,
     "functions_scored": 940,
-    "functions_without_data": 35
+    "functions_without_data": 35,
+    "functions_in_test_files": 120
   },
   "ratchet": {
     "result": "pass",
