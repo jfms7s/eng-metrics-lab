@@ -16,7 +16,25 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest -m "not tools and not db"
+      # eng-metrics-lab: the test run itself writes the lcov, so the tests run once. The fragment
+      # waits in RUNNER_TEMP until every step has passed (see the collect step).
+      - name: Test with coverage (eng-metrics-lab)
+        run: >-
+          pytest -m "not tools and not db" --cov=quality_report --cov=collector --cov-branch
+          --cov-report=lcov:"$RUNNER_TEMP/coverage-py.lcov"
+        env:
+          COVERAGE_FILE: ${{ runner.temp }}/.coverage
+      # Only reached when every step above passed, so a red test leaves no fragment.
+      - name: Collect coverage fragment (eng-metrics-lab)
+        run: |
+          mkdir -p .quality
+          mv "$RUNNER_TEMP/coverage-py.lcov" .quality/coverage-py.lcov
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quality-fragments-py
+          path: .quality/coverage-py.lcov
+          include-hidden-files: true
+          retention-days: 7
   db:
     runs-on: ubuntu-latest
     services:
@@ -50,10 +68,17 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src quality-report:ci
           sh -c "pip install -q pytest responses && pytest -m tools"
   self:
-    needs: image
+    needs: [image, test]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: quality-fragments-*
+          merge-multiple: true
+          path: .quality
+        continue-on-error: true
       - run: docker build -t quality-report:ci .
       - uses: ./action
         with:
